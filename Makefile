@@ -42,7 +42,7 @@ migrate:
 	$(MANAGE) migrate
 
 er-eval:       ## entity-resolution precision on the hand-labelled pairs
-	$(MANAGE) er_eval data/er_labels.csv
+	$(MANAGE) er_eval data/er_labels.csv data/er_synthetic.csv
 
 reindex:
 	$(MANAGE) es_setup --recreate --reindex

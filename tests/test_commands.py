@@ -98,7 +98,7 @@ def test_er_pairs_and_eval(tmp_path, make_page):
             {"name_a": "ASI || Merrut Circle", "name_b": "ASI || Meerut Circle", "same_entity": "1"}
         )
     out = run("er_eval", str(labels))
-    assert "3 labelled pairs, 2 true matches" in out
+    assert "[real] 3 labelled pairs, 2 true matches" in out
     guarded = next(line for line in out.splitlines() if line.startswith("token_set_ratio + guards"))
     assert "100.0%" in guarded  # no false positive with guards
     plain = next(line for line in out.splitlines() if line.startswith("token_set_ratio alone"))
@@ -106,3 +106,7 @@ def test_er_pairs_and_eval(tmp_path, make_page):
 
     pairs = tmp_path / "pairs.csv"
     assert "wrote" in run("er_pairs", str(pairs))
+    synthetic = tmp_path / "synthetic.csv"
+    assert "synthetic positive pairs" in run("er_pairs", str(synthetic), "--synthetic", "10")
+    rows = list(csv.DictReader(synthetic.open()))
+    assert rows and all(r["same_entity"] == "1" and r["name_a"] != r["name_b"] for r in rows)

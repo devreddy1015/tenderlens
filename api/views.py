@@ -184,7 +184,9 @@ class Stats(APIView):
                 for r in qs.values("state").annotate(n=Count("id")).order_by("-n")
             ]
 
-        last = CrawlRun.objects.exclude(status=CrawlRun.Status.RUNNING).first()
+        last = (
+            CrawlRun.objects.exclude(status=CrawlRun.Status.RUNNING).order_by("-finished").first()
+        )
         return Response(
             {
                 "total_tenders": Tender.objects.count(),
@@ -248,7 +250,9 @@ def health(request):
     since = timezone.now() - timedelta(hours=24)
     runs = CrawlRun.objects.filter(started__gte=since)
     by_status = dict(runs.values_list("status").annotate(n=Count("id")).values_list("status", "n"))
-    last_ok = CrawlRun.objects.filter(status=CrawlRun.Status.SUCCEEDED).first()
+    last_ok = (
+        CrawlRun.objects.filter(status=CrawlRun.Status.SUCCEEDED).order_by("-finished").first()
+    )
     crawl = {
         "runs_24h": by_status,
         "last_run": _run_summary(CrawlRun.objects.first()),

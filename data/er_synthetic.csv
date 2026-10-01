@@ -1,0 +1,61 @@
+name_a,name_b,score_unguarded,score_guarded,source,band_unguarded,block_state,same_entity,note
+Jamia Millia Islamia || Building and Construction Department - JMI,Jamia Millia Islamia || Building and Construction Deptt. - JMI,100.0,100.0,synthetic,,,1,abbreviation
+Department of Higher Education || Khargone - Jawaharlal Nehru Govt Degree College - Badwaha,Department of Higher Education || Khargone Jawaharlal Nehru Govt Degree College Badwaha,100.0,100.0,synthetic,,,1,punctuation
+Indian Institute of Management Jammu,INDIAN INSTITUTE OF MANAGEMENT JAMMU,100.0,100.0,synthetic,,,1,upper_case
+Indian Institute of Science Education and Research - Thiruvananthapuram || Purchase and Stores-IISER - Thiruvananthapuram,Indian Institute of Science Education and Research - Thiruvananthapuram || Office of the Purchase and Stores-IISER - Thiruvananthapuram,100.0,100.0,synthetic,,,1,office_of_prefix
+Directorate of Health Services || CS District Panna,Directortae of Health Services || CS District Panna,97.8,96.3,synthetic,,,1,typo
+NHPC Limited || Dhauliganga Power Station-NHPC,NHPC Ltd || Dhauliganga Power Station-NHPC,100.0,100.0,synthetic,,,1,abbreviation
+Indian Institute of Technology(BHU) Varanasi || Institute Purchase Cell - IIT(BHU),Indian Institute of Technology(BHU) Varanasi || Institute Purchase Cell IIT(BHU),100.0,100.0,synthetic,,,1,punctuation
+NHPC Limited || Chamera-III Power Station-NHPC,NHPC LIMITED || CHAMERA-III POWER STATION-NHPC,100.0,100.0,synthetic,,,1,upper_case
+Delhi Development Authority || CE-South Zone-DDA,Delhi Development Authority || Office of the CE-South Zone-DDA,100.0,100.0,synthetic,,,1,office_of_prefix
+Visakhapatnam Special Economic Zone Authority || VSEZ Authority Section,Visakhapatnam Special Economic Zone Atuhority || VSEZ Authority Section,100.0,97.8,synthetic,,,1,typo
+Inter University Accelerator Centre || Store and Purchase Division - IUAC,Inter Univ. Accelerator Centre || Store and Purchase Division - IUAC,100.0,100.0,synthetic,,,1,abbreviation
+All India Institute of Medical Sciences-Bhubaneswar || Store and Procurement - AIIMS Bhubaneswar,All India Institute of Medical Sciences Bhubaneswar || Store and Procurement AIIMS Bhubaneswar,100.0,100.0,synthetic,,,1,punctuation
+"Food Corporation of India || Regional Office, Delhi,FCI,MFPD","FOOD CORPORATION OF INDIA || REGIONAL OFFICE, DELHI,FCI,MFPD",100.0,100.0,synthetic,,,1,upper_case
+"DG,BSF,MHA || Prov Dte, Proc Cell(New Delhi),BSF,MHA","DG,BSF,MHA || Office of the Prov Dte, Proc Cell(New Delhi),BSF,MHA",100.0,100.0,synthetic,,,1,office_of_prefix
+Delhi Development Authority || CE-North Zone-DDA,Delhi Development Auhtority || CE-North Zone-DDA,100.0,96.3,synthetic,,,1,typo
+Department of Industrial Training and Employment || Commissioner Department of Industrial Training and Employment,Deptt. of Industrial Training and Employment || Commissioner Department of Industrial Training and Employment,100.0,100.0,synthetic,,,1,abbreviation
+"Inland Waterways Authority of India,MoS || RO Kochi,IWAI,MoS","Inland Waterways Authority of India , MoS || RO Kochi , IWAI , MoS",100.0,100.0,synthetic,,,1,punctuation
+"DG,BSF,MHA || Rajasthan FTR(Rajasthan),BSF,MHA","DG,BSF,MHA || RAJASTHAN FTR(RAJASTHAN),BSF,MHA",100.0,100.0,synthetic,,,1,upper_case
+Central Water Commission- DoWR RD and GR || Brahmaputra and Barak Basin Organisation - Shillong,Central Water Commission- DoWR RD and GR || Office of the Brahmaputra and Barak Basin Organisation - Shillong,100.0,100.0,synthetic,,,1,office_of_prefix
+Delhi University || Atma Ram Sanatan Dharma(ARSD) College - DU,Delhi Unievrsity || Atma Ram Sanatan Dharma(ARSD) College - DU,98.2,93.8,synthetic,,,1,typo
+Directorate General of Lighthouses and Lightships || Directorate of Lighthouses and Lightships - Mumbai - DGLL,Dte. General of Lighthouses and Lightships || Directorate of Lighthouses and Lightships - Mumbai - DGLL,100.0,100.0,synthetic,,,1,abbreviation
+Archaeological Survey of India || O/o SA-ASI-Nagpur Circle-Nagpur,Archaeological Survey of India || O/o SA ASI Nagpur Circle Nagpur,100.0,100.0,synthetic,,,1,punctuation
+Directorate of Health Services || CS District Bhind,DIRECTORATE OF HEALTH SERVICES || CS DISTRICT BHIND,100.0,100.0,synthetic,,,1,upper_case
+Employees State Insurance Corporation || ESIC Hqrs. Office - New Delhi,Employees State Insurance Corporation || Office of the ESIC Hqrs. Office - New Delhi,100.0,100.0,synthetic,,,1,office_of_prefix
+"Department of Posts || Maharashtra Circle,Dept. of Posts","Department of Posts || Maahrashtra Circle,Dept. of Posts",97.1,97.1,synthetic,,,1,typo
+"Department of Posts || North East Circle ,Dept. of Posts","Deptt. of Posts || North East Circle ,Dept. of Posts",100.0,100.0,synthetic,,,1,abbreviation
+National Forensic Sciences University || HQ NFSU - Gandhinagar,National Forensic Sciences University || HQ NFSU Gandhinagar,100.0,100.0,synthetic,,,1,punctuation
+Ministry of Road Transport and Highways || P4 Delhi - MoRTH,MINISTRY OF ROAD TRANSPORT AND HIGHWAYS || P4 DELHI - MORTH,100.0,100.0,synthetic,,,1,upper_case
+Ministry of Road Transport and Highways || Special Project Zone(SPZ)-Delhi - MoRTH,Ministry of Road Transport and Highways || Office of the Special Project Zone(SPZ)-Delhi - MoRTH,100.0,100.0,synthetic,,,1,office_of_prefix
+Malaviya National Institute of Technology Jaipur || Estate Section,Malaviya Natioal Institute of Technology Jaipur || Estate Section,99.2,98.9,synthetic,,,1,typo
+Maulana Azad National Urdu University || Hyderabad-Telangana - MANUU,Maulana Azad National Urdu Univ. || Hyderabad-Telangana - MANUU,100.0,100.0,synthetic,,,1,abbreviation
+"National Aluminium Company Limited,NALCO || NALCO-Corporate Office-Bhubaneswar","National Aluminium Company Limited,NALCO || NALCO Corporate Office Bhubaneswar",100.0,100.0,synthetic,,,1,punctuation
+THDC India Limited || Tehri-THDC India Ltd,THDC INDIA LIMITED || TEHRI-THDC INDIA LTD,100.0,100.0,synthetic,,,1,upper_case
+Directorate of Purchase and Stores || Hyderabad Regional Purchase Unit Hyderabad - DPS,Directorate of Purchase and Stores || Office of the Hyderabad Regional Purchase Unit Hyderabad - DPS,100.0,100.0,synthetic,,,1,office_of_prefix
+Employees State Insurance Corporation || R.O. Madhya Pradesh,Employees State Insurance Coproration || R.O. Madhya Pradesh,98.2,97.3,synthetic,,,1,typo
+Delhi University || Maitreyi College - DU,Delhi Univ. || Maitreyi College - DU,100.0,100.0,synthetic,,,1,abbreviation
+All India Institute of Medical Sciences-Gorakhpur,All India Institute of Medical Sciences Gorakhpur,100.0,100.0,synthetic,,,1,punctuation
+All India Institute of Medical Sciences Vijaypur Jammu || Procurement - AIIMS Jammu,ALL INDIA INSTITUTE OF MEDICAL SCIENCES VIJAYPUR JAMMU || PROCUREMENT - AIIMS JAMMU,100.0,100.0,synthetic,,,1,upper_case
+National Institute of Open Schooling || NIOS HQ NOIDA,National Institute of Open Schooling || Office of the NIOS HQ NOIDA,100.0,100.0,synthetic,,,1,office_of_prefix
+"Bharat Sanchar Nigam Limited || CGMT,UP(WEST) Telecom Circle, Meerut,BSNL","Bharat Sanchar Nigam Lmiited || CGMT,UP(WEST) Telecom Circle, Meerut,BSNL",100.0,96.4,synthetic,,,1,typo
+Andaman Lakshadweep Harbour Works || Executive Engineer (CSWD)- Port Blair ALHW,Andaman Lakshadweep Harbour Works || EE (CSWD)- Port Blair ALHW,100.0,100.0,synthetic,,,1,abbreviation
+Bureau of Pharma PSUs of India (BPPI) || Head Office(Gurgaon) - BPPI,Bureau of Pharma PSUs of India (BPPI) || Head Office(Gurgaon) BPPI,100.0,100.0,synthetic,,,1,punctuation
+National Bal Bhavan - NBB || Administration - NBB,NATIONAL BAL BHAVAN - NBB || ADMINISTRATION - NBB,100.0,100.0,synthetic,,,1,upper_case
+Hindustan Organic Chemicals Limited || Personnel and Administration Dept - HOCL,Hindustan Organic Chemicals Limited || Office of the Personnel and Administration Dept - HOCL,100.0,100.0,synthetic,,,1,office_of_prefix
+Department of Higher Education || Ratlam - Govt Arts and Science P G College Ratlam,Deparment of Higher Education || Ratlam - Govt Arts and Science P G College Ratlam,99.1,98.1,synthetic,,,1,typo
+Directorate of Health Services || EE NHM Indore Division,Dte. of Health Services || EE NHM Indore Division,100.0,100.0,synthetic,,,1,abbreviation
+Archaeological Survey of India || O/o Dy. SA-ASI-Mini Circle Hampi-Hampi,Archaeological Survey of India || O/o Dy. SA ASI Mini Circle Hampi Hampi,100.0,100.0,synthetic,,,1,punctuation
+Indian Institute of Science - Bangalore || Divison of Administration,INDIAN INSTITUTE OF SCIENCE - BANGALORE || DIVISON OF ADMINISTRATION,100.0,100.0,synthetic,,,1,upper_case
+Indian Institute of Science Education and Research - Thiruvananthapuram || Construction and Engineering-IISER - Thiruvananthapuram,Indian Institute of Science Education and Research - Thiruvananthapuram || Office of the Construction and Engineering-IISER - Thiruvananthapuram,100.0,100.0,synthetic,,,1,office_of_prefix
+All India Institute of Medical Science-New Delhi || Store Main Hospital - AIIMS New Delhi,All India Institute of Medical Science-New Delhi || Store Main Hosital - AIIMS New Delhi,99.3,99.2,synthetic,,,1,typo
+Aligarh Muslim University || Electricity Department,Aligarh Muslim Univ. || Electricity Department,100.0,100.0,synthetic,,,1,abbreviation
+Indian Institute of Technology Bhilai || Stores and Purchase - IIT Bhilai,Indian Institute of Technology Bhilai || Stores and Purchase IIT Bhilai,100.0,100.0,synthetic,,,1,punctuation
+The Braithwaite Burn and Jessop Construction Co. Ltd,THE BRAITHWAITE BURN AND JESSOP CONSTRUCTION CO. LTD,100.0,100.0,synthetic,,,1,upper_case
+Directorate General of Lighthouses and Lightships || Directorate of Lighthouses and Lightships - Gandhidham - DGLL,Directorate General of Lighthouses and Lightships || Office of the Directorate of Lighthouses and Lightships - Gandhidham - DGLL,100.0,100.0,synthetic,,,1,office_of_prefix
+Directorate Farmer Welfare And Agriculture Development,Directorate Farmer Welare And Agriculture Development,99.0,99.0,synthetic,,,1,typo
+NHPC Limited || Uri-I Stage-II HE Project-NHPC,NHPC Ltd || Uri-I Stage-II HE Project-NHPC,100.0,100.0,synthetic,,,1,abbreviation
+Indian Institute of Information Technology Guwahati || Establishment Section - IIIT Guwahati,Indian Institute of Information Technology Guwahati || Establishment Section IIIT Guwahati,100.0,100.0,synthetic,,,1,punctuation
+Pondicherry University,PONDICHERRY UNIVERSITY,100.0,100.0,synthetic,,,1,upper_case
+Archaeological Survey of India || O/o SA-ASI-Ranchi Circle-Ranchi,Archaeological Survey of India || Office of the O/o SA-ASI-Ranchi Circle-Ranchi,100.0,100.0,synthetic,,,1,office_of_prefix
+"Department of Posts || Bihar Circle,Dept. of Posts","Departmnt of Posts || Bihar Circle,Dept. of Posts",100.0,96.8,synthetic,,,1,typo
