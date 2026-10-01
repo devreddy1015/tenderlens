@@ -1,0 +1,86 @@
+# Local development / single-host stack. `make up` starts everything.
+x-app: &app
+  build: .
+  image: tenderlens:latest
+  env_file: .env
+  environment:
+    POSTGRES_HOST: postgres
+    REDIS_URL: redis://redis:6379/0
+    ES_URL: http://elasticsearch:9200
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    elasticsearch: { condition: service_healthy }
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16   # pgvector is used later by DocIntel
+    environment:
+      POSTGRES_DB: tenderlens
+      POSTGRES_USER: tenderlens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tenderlens}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tenderlens -d tenderlens"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]   # broker survives restarts
+    volumes: [redisdata:/data]
+    ports: ["127.0.0.1:6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes: [esdata:/usr/share/elasticsearch/data]
+    ports: ["127.0.0.1:9200:9200"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      interval: 10s
+      retries: 30
+    restart: unless-stopped
+
+  web:
+    <<: *app
+    command: ["/app/deploy/entrypoint.sh", "web"]
+    ports: ["127.0.0.1:8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 15s
+      retries: 10
+
+  worker:
+    <<: *app
+    command: ["celery", "-A", "config", "worker", "-Q", "crawl,default", "--concurrency", "2", "-l", "info"]
+
+  beat:
+    <<: *app
+    command: ["celery", "-A", "config", "beat", "-l", "info", "--schedule", "/tmp/celerybeat-schedule"]
+
+  nginx:
+    build:
+      context: .
+      dockerfile: deploy/nginx.Dockerfile
+    image: tenderlens-nginx:latest
+    ports: ["${HTTP_PORT:-8080}:80"]
+    depends_on:
+      web: { condition: service_healthy }
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  esdata:

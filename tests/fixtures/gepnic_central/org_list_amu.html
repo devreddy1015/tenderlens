@@ -1,0 +1,778 @@
+<head>
+	<base target="_self">
+	<title>eProcurement System Government of India</title>
+</head>
+<!-- BEGIN: HEADER -->
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=UTF-8" />
+<title>eProcurement System</title>
+<script type="text/javascript">djConfig = {"baseRelativePath":"/eprocure/app?service=asset&path=%2Fgep%2F","preventBackButtonFix":false,"parseWidgets":false,"locale":"en-us"} </script>
+
+<script type="text/javascript" src="/eprocure/app?service=asset&path=%2Fgep%2Fgep.js"></script><script type="text/javascript" src="/eprocure/app?service=asset&path=%2Fgep%2Fgep2.js"></script>
+<script type="text/javascript">
+dojo.registerModulePath("tapestry", "/eprocure/app?service=asset&path=%2Ftapestry%2F");
+</script>
+<script type="text/javascript" src="/eprocure/app?service=asset&path=%2Ftapestry%2Fcore.js"></script>
+<script type="text/javascript">
+dojo.require("tapestry.namespace");
+tapestry.requestEncoding='UTF-8';
+</script>
+<link rel="stylesheet" type="text/css" href="/eprocure/css/nicgep_web_style.css" />
+</head>
+<head>
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="no-cache">
+<meta http-equiv="Expires" content="-1">
+<meta http-equiv="Cache-Control" content="no-cache">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<noscript>
+	<meta http-equiv="Refresh" content="2;url=https://eprocure.gov.in/eprocure/app?page=ErrorNotice&amp;service=page" id="Any"></meta> 
+</noscript>
+<link href="includes/dialog/dialog_box.css" rel="stylesheet" type="text/css">
+<link rel="shortcut icon" href="images/nation.ico" ></link>
+<link href="includes/dialog/nicgep_color_theme.css" rel="stylesheet" type="text/css">
+
+
+
+<!-- Javascript -->
+<script language="JavaScript" type="text/JavaScript" src="includes/evaluator.js"></script>
+<script language="javascript" src="includes/MessageDigest.js" ></script>
+<script language="JavaScript" type="text/JavaScript" src="includes/dialog/dialog_box.js"></script>
+<!-- End -->
+<script language="JavaScript" type="text/JavaScript">
+<!--
+	function MM_swapImgRestore() { //v3.0
+	  var i,x,a=document.MM_sr; for(i=0;a&&i<a.length&&(x=a[i])&&x.oSrc;i++) x.src=x.oSrc;
+	}
+	
+	function MM_preloadImages() { //v3.0
+	  var d=document; if(d.images){ if(!d.MM_p) d.MM_p=new Array();
+	    var i,j=d.MM_p.length,a=MM_preloadImages.arguments; for(i=0; i<a.length; i++)
+	    if (a[i].indexOf("#")!=0){ d.MM_p[j]=new Image; d.MM_p[j++].src=a[i];}}
+	}
+	
+	function MM_findObj(n, d) { //v4.01
+	  var p,i,x;  if(!d) d=document; if((p=n.indexOf("?"))>0&&parent.frames.length) {
+	    d=parent.frames[n.substring(p+1)].document; n=n.substring(0,p);}
+	  if(!(x=d[n])&&d.all) x=d.all[n]; for (i=0;!x&&i<d.forms.length;i++) x=d.forms[i][n];
+	  for(i=0;!x&&d.layers&&i<d.layers.length;i++) x=MM_findObj(n,d.layers[i].document);
+	  if(!x && d.getElementById) x=d.getElementById(n); return x;
+	}
+	
+	function MM_swapImage() { //v3.0
+	  var i,j=0,x,a=MM_swapImage.arguments; document.MM_sr=new Array; for(i=0;i<(a.length-2);i+=3)
+	   if ((x=MM_findObj(a[i]))!=null){document.MM_sr[j++]=x; if(!x.oSrc) x.oSrc=x.src; x.src=a[i+2];}
+	}
+//-->
+</script>
+
+</head>
+
+
+<body onLoad="MM_preloadImages('images/homeb.png','images/contactb.png','images/sitemapb.png')" onunload="" onpageshow="if (event.persisted) noBack();" ondragstart="return false;" id="Body">
+
+	
+	<script type="text/javascript">
+
+	if(navigator.appName == 'Microsoft Internet Explorer')
+	{
+	document.onkeydown = fnCheckKeysMIE;
+	}
+	else if(navigator.appName == 'Netscape')
+	{
+	document.onkeydown = fnCheckKeysNMF;
+	}
+	
+	function fnCheckKeysNMF(event)
+	{
+	
+	var e=event? event : window.event;
+	var event_element=e.target? e.target : e.srcElement;
+	
+	if (event.ctrlKey && (event.keyCode==78 || event.keyCode==84 || event.which==78 || event.which==84))
+	{
+	return false;
+	}
+	
+	if (event.altKey && (event.keyCode==37 || event.which==37))
+	{
+	return false;
+	}
+	
+	if (event.keyCode==8 && (event_element.tagName != 'INPUT' && event_element.tagName != 'TEXTAREA'))
+	{
+	return false;
+	}
+	
+	}
+	
+	function fnCheckKeysMIE()
+	{
+	
+	var e=event? event : window.event;
+	var event_element=e.target? e.target : e.srcElement;
+	
+	if (event.ctrlKey && (event.keyCode==78 || event.keyCode==84 || event.which==78 || event.which==84))
+	{
+	return false;
+	}
+	
+	if (event.altKey && (event.keyCode==37 || event.which==37))
+	{
+	return false;
+	}
+	
+	if (event.keyCode==8 && (event_element.tagName != 'INPUT' && event_element.tagName != 'TEXTAREA'))
+	{
+	return false;
+	}
+	
+	}
+
+	window.history.forward();
+	function noBack(){ window.history.forward(); }
+	
+	</script>
+		
+	<div id="content">
+		<table width="1004" height="100%" border="0" align="center" cellpadding="0" cellspacing="0" bgcolor="#FFFFFF">
+			<tr>
+				<td valign="top" height="40">
+					<table width="1000" border="0" align="center" cellspacing="0" cellpadding="0">
+    <tr> 
+    <td>
+		<table width="100%" height="22" border="0" cellpadding="0" cellspacing="0" id="Menu">
+		 <td width="210" height="22" align="right" class="date topBannerGradient"><a id="link1" name="link1" class="Menu" href="/eprocure/app?page=WebScreenReaderAccess&amp;service=page">Screen Reader Access</a>
+				
+		  </td>
+		</table>
+		</td>
+		</tr>
+   <tr> 
+    <td width="1005"><img border="0" width="1005" alt="Logo" src="images/topban.png" usemap="#Map" height="83" id="Any_0"></img></td>
+  </tr>		
+  <tr>
+    <td height="1" class="topBannerLine"></td>
+  </tr>
+
+  <tr> 
+    <td>
+		<table width="100%" height="22" border="0" cellpadding="0" cellspacing="0" id="Menu">
+        <tr> 
+          <td width="210" height="22" align="center" class="date primaryBg">
+				02-Oct-2026 
+		  </td>
+          <td align="center" class="secondaryBg">
+	           <span id="If">
+					<span id="For">
+						
+		             	 <span>
+							<a id="link1" name="link1" title="Search" class="Menu" href="/eprocure/app?page=FrontEndAdvancedSearch&amp;service=page" target="_self">Search</a>
+						</span>
+						<span class="divider1" id="Insert_2">|</span>
+					</span><span id="For_0">
+						
+		             	 <span>
+							<a id="link1" name="link1" title="Active Tenders" class="Menu" href="/eprocure/app?page=FrontEndLatestActiveTenders&amp;service=page" target="_self">Active Tenders</a>
+						</span>
+						<span class="divider1" id="Insert_2_0">|</span>
+					</span><span id="For_1">
+						
+		             	 <span>
+							<a id="link1" name="link1" title="Tenders by Closing Date" class="Menu" href="/eprocure/app?page=FrontEndListTendersbyDate&amp;service=page" target="_self">Tenders by Closing Date</a>
+						</span>
+						<span class="divider1" id="Insert_2_1">|</span>
+					</span><span id="For_2">
+						
+		             	 <span>
+							<a id="link1" name="link1" title="Corrigendum" class="Menu" href="/eprocure/app?page=FrontEndLatestActiveCorrigendums&amp;service=page" target="_self">Corrigendum</a>
+						</span>
+						<span class="divider1" id="Insert_2_2">|</span>
+					</span><span id="For_3">
+						
+		             	 <span>
+							<a id="link1" name="link1" title="Results of Tenders" class="Menu" href="/eprocure/app?page=ResultOfTenders&amp;service=page" target="_self">Bid Awards</a>
+						</span>
+						<span class="divider1" id="Insert_2_3">|</span>
+					</span><span id="For_4">
+						<span id="If_0_4">
+				            <a id="link1" name="link1" title="CPPP Home" class="Menu" href="http://eprocure.gov.in/cppp/" target="_self">CPPP Home</a>
+		             	 </span>
+		             	 
+						
+					</span>
+	          </span>
+	          
+          </td>
+          <td width="215" valign="middle" class="primaryBg">
+			<table width="100%" border="0" align="center" cellpadding="0" cellspacing="0">
+              <tr> 
+                <td width="28%"><div align="center"><a id="homeLink" onMouseOut="MM_swapImgRestore()" onMouseOver="MM_swapImage('Image4','','images/homeb.png',1)" page="Home" href="/eprocure/app?service=restart"><img src="images/homea.png" alt="Home" name="Image4" width="47" height="18" border="0"></a></div></td>
+                <td width="40%"><div align="center"><a id="PageLink_6" onMouseOut="MM_swapImgRestore()" onMouseOver="MM_swapImage('Image5','','images/contactb.png',1)" href="/eprocure/app?page=FrontEndContactUs&amp;service=page"><img src="images/contacta.png" alt="Contact Us" name="Image5" width="78" height="18" border="0"></a></div></td>
+                <td width="32%"><div align="center"><a id="PageLink_7" onMouseOut="MM_swapImgRestore()" onMouseOver="MM_swapImage('Image6','','images/sitemapb.png',1)" href="/eprocure/app?page=SiteMap&amp;service=page"><img src="images/sitemapa.png" alt="Sitemap" name="Image6" width="63" height="18" border="0"></a></div></td>                 
+              </tr>
+            </table></td>
+        </tr>
+      </table></td>
+  </tr>
+  <tr>
+	<td>
+		<table width="100%" cellspacing="0" cellpadding="0">
+	<tr>
+		<td class="notice" width="20" align="right"><img src="images/notice.png" width="15" height="16" alt="Notices" /> </td>
+		<td class="notice_strip">
+			<marquee align="left" id="gepNotice" onMouseover="this.stop();" onMouseout="this.start();" scrolldelay="200">
+				
+				<span>
+					eProcurement System Government of India
+				</span>
+			</marquee>
+		</td>
+	</tr>
+</table>
+	</td>
+  </tr>
+</table>
+<map name="Map">
+  <a id="PageLink_8" shape="circle" coords="43,43,37" href="/eprocure/app?page=Home&amp;service=page"></a>
+</map>
+
+				</td>
+			</tr>
+			<tr>
+				<td valign="top">
+					<table width="100%" height="100%" cellspacing="0" cellpadding="0" border="0">
+						<tr>
+
+							<td width="214" class="navigation"><script language="javascript">
+
+	// Script to view document in popup
+	function popup(mylink, windowname)
+	{
+		if (! window.focus)return true;
+		var href;
+		if (typeof(mylink) == 'string')
+	 		href=mylink;
+		else
+			href=mylink.href;
+			window.open(href, "Popup", 'location=no, scrollbars=yes, toolbar=no, width=700, height=550, directories=no, menubar=no, resizable=yes, status=no, titlebar=yes');
+			return false;   
+	}
+
+</script>
+
+<table width="100%" height="100%" cellspacing="0" cellpadding="0" class="left_nav">	
+	
+	<tr> 
+         <td height="10"></td>
+     </tr>
+     	
+	<tr>
+		<td valign="top">
+			<table width="214" border="0" cellspacing="0" cellpadding="0">
+				<span id="If_2">
+					<tr id="For_6">
+						<span id="If_0_5">
+							<span id="If_3">
+			             		<tr> 
+					             	<td height="37" background="images/textbg.png" align="center"><a id="GenericLink" rel="noopener noreferrer" title="MIS Reports" class="link1" href="https://gepnicreports.gov.in/eprocreports/eproc/" target="_blank">MIS Reports</a></td>
+					             </tr>
+			             	 </span>
+			             	 
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_7">
+						<span id="If_0_6">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink" title="Tenders by Location" class="link1" href="/eprocure/app?page=FrontEndTendersByLocation&amp;service=page" target="_self">Tenders by Location</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_8">
+						<span id="If_0_7">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink_0" title="Tenders by Organisation" class="link1" href="/eprocure/app?page=FrontEndTendersByOrganisation&amp;service=page" target="_self">Tenders by Organisation</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_9">
+						<span id="If_0_8">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink_1" title="Tenders by Classification" class="link1" href="/eprocure/app?page=FrontEndTendersByClassification&amp;service=page" target="_self">Tenders by Classification</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_10">
+						<span id="If_0_9">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink_2" title="Tenders in Archive" class="link1" href="/eprocure/app?page=FrontEndTendersInArchive&amp;service=page" target="_self">Tenders in Archive</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_11">
+						<span id="If_0_10">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink_3" title="Tenders Status" class="link1" href="/eprocure/app?page=WebTenderStatusLists&amp;service=page" target="_self">Tenders Status</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_12">
+						<span id="If_0_11">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink_4" title="Cancelled Tenders" class="link1" href="/eprocure/app?page=WebCancelledTenderLists&amp;service=page" target="_self">Cancelled/Retendered</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_13">
+						<span id="If_0_12">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink_5" title="Downloads" class="link1" href="/eprocure/app?page=StandardBiddingDocuments&amp;service=page" target="_self">Downloads</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_14">
+						<span id="If_0_13">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink_9" title="D" class="link1" href="/eprocure/app?page=FrontEndDebarmentList&amp;service=page" target="_self">Debarment List</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_15">
+						<span id="If_0_14">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink_10" title="Announcements" class="link1" href="/eprocure/app?page=WebAnnouncements&amp;service=page" target="_self">Announcements</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_16">
+						<span id="If_0_15">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink_11" title="Recognitions" class="link1" href="/eprocure/app?page=WebAwards&amp;service=page" target="_self">Recognitions</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_17">
+						<span id="If_0_16">
+							
+			             	 <span>
+				             	 <tr> 
+				                	<td height="37" background="images/textbg.png" align="center"><a id="PageLink_12" title="Site compatibility" class="link1" href="/eprocure/app?page=SiteComp&amp;service=page" target="_self">Site compatibility</a></td>
+				             	 </tr>
+			             	 </span>
+			             	 
+			             	 <tr> 
+				                <td height="10"></td>
+				             </tr>
+			             	 
+						</span>
+					</tr><tr id="For_18">
+						
+					</tr><tr id="For_19">
+						
+					</tr><tr id="For_20">
+						
+					</tr><tr id="For_21">
+						
+					</tr><tr id="For_22">
+						
+					</tr>
+					
+					<tr> 
+		                <td height="10"></td>
+		             </tr>
+				</span>
+				
+				<span id="If_15">
+					<tr> 
+	               		<td height="30" align="center">
+							<table width="160" height="114" border="0" align="center" cellpadding="0" cellspacing="0">
+								<tr id="For_24"> 
+				             		<tr>
+				             			<td height="15" valign="top"><a id="GenericLink_0" rel="noopener noreferrer" title="DashBoard" href="https://eprocure.gov.in/eprocdashboard?siteCode=EPROCURE" target="_blank"><img border="0" width="160" src="images/dashboard.png" height="34" id="Any_1"></img></a></td>
+				             		</tr>
+				             		 <tr> 
+						                <td height="10"></td>
+						             </tr>
+				             	 </tr><tr id="For_25"> 
+				             		<tr>
+				             			<td height="15" valign="top"><a id="GenericLink_0_0" rel="noopener noreferrer" title="link" href="https://gepnic.gov.in" target="_blank"><img border="0" width="160" src="images/Gepnic Logo.png" height="34" id="Any_2"></img></a></td>
+				             		</tr>
+				             		 <tr> 
+						                <td height="10"></td>
+						             </tr>
+				             	 </tr><tr id="For_26"> 
+				             		<tr>
+				             			<td height="15" valign="top"><a id="GenericLink_0_1" rel="noopener noreferrer" title="National Portal of India - External Link that open in a new window" href="http://india.gov.in" target="_blank"><img border="0" width="160" src="images/indiagovin.png" height="34" id="Any_3"></img></a></td>
+				             		</tr>
+				             		 <tr> 
+						                <td height="10"></td>
+						             </tr>
+				             	 </tr><tr id="For_27"> 
+				             		<tr>
+				             			<td height="15" valign="top"><a id="GenericLink_0_2" rel="noopener noreferrer" title="CPPP on eProcurement - External link that opens in a new window" href="http://eprocure.gov.in/cppp" target="_blank"><img border="0" width="160" src="images/cppp-img.png" height="34" id="Any_4"></img></a></td>
+				             		</tr>
+				             		 <tr> 
+						                <td height="10"></td>
+						             </tr>
+				             	 </tr><tr id="For_28"> 
+				             		<tr>
+				             			<td height="15" valign="top"><a id="GenericLink_0_3" rel="noopener noreferrer" title="Government e-Marketing of India - External link that opens in a new window" href="https://gem.gov.in" target="_blank"><img border="0" width="160" src="images/gem.png" height="34" id="Any_5"></img></a></td>
+				             		</tr>
+				             		 <tr> 
+						                <td height="10"></td>
+						             </tr>
+				             	 </tr>
+							</table>
+				 		</td>
+	             	</tr>					
+				</span>	
+				
+				<tr> 
+					<td height="30" align="center">&nbsp;</td>
+			  	</tr>							
+			  	
+			</table>
+		</td>
+	</tr>
+	
+</table></td>
+							<td class="page_content" valign="top">
+							<!-- Page content starts here -->
+								
+	<table width="100%" height="100%" border="0" align="center" cellpadding="0" cellspacing="0">
+		<tr>
+			<td valign="top" height="100%">
+				<!-- Page Content -->
+					<!-- Content Area -->
+					<table width="100%" cellspacing="0" cellpadding="0" border="0" height="100%">
+						<tr>
+							<td class="page_content" height="100%" valign="top">
+								<table width="100%" cellspacing="0" cellpadding="0" border="0">
+									<form method="post" action="/eprocure/app" id="FrontEndViewTender">
+<div style="display:none;" id="FrontEndViewTenderhidden"><input type="hidden" name="formids" value="tokenSecret,If_17,iterRows_0" />
+<input type="hidden" name="seedids" value="ZH4sIAAAAAAAAAF2QQW7CMBBFw6I3maUXcYDQLhspICRAVYvaZRSSSbEIM5HttqJn6tV6h05iihAb+4+f5/uPf36ju+8oGi1GuXJoP02FEKuufO+3io8dE5IfNPnSEFrRDp0zTL3qZHnDXca2HtCSxMWDnqmXPbatnDzSCVKVcX0KV7fcZSUFo9bQQQtdNqBTNWcLY7FoihiSROWtQ9APZ8tCw+RfJjBVez7iStrF5UnS9rJIr4tZeG7DPsx0AfcBrLDxa6QPqRYocUx1Ywd6fE0k1EQ9I8mc52HmVv4kp/rV4Nd2ABD/AcM6sBFQAQAA" />
+<input type="hidden" name="component" value="FrontEndViewTender" />
+<input type="hidden" name="page" value="FrontEndViewTender" />
+<input type="hidden" name="service" value="direct" />
+<input type="hidden" name="session" value="T" />
+<input type="hidden" name="submitmode" value="" />
+<input type="hidden" name="submitname" value="" />
+<input type="hidden" name="tokenSecret" id="tokenSecret" value="SMagWljkpnu6KIk4lFBlE9vwwnWOD2FWRxufeT9pMhVHkiYHvzDrgUfmgLCN/CPrO" />
+<input type="hidden" name="If_17" value="T" />
+<input type="hidden" name="iterRows_0" value="VZH4sIAAAAAAAAAGVRMW8TMRR2UlVCDURtYUWyxNJK5HJNUVvKlCaRSJWEiktZK8d5vbjc2YftSxMUIbHA0KEMgBgZOvan8BOQQNCVmYWB5yTQFG6wzp+/973vfe/8B5k3mnih6ntScC+ExDuGjhEWPJBW2KHXYBaMLXMr+tAG2QVt3v/aPv38YauXJfkGyfFIGSHDKvIsWW4csT4rRkyGxcBqxB80yHWupNWMW8d5Rl6QzBjTWoQomMbGkpszdTtKRcAkFi50IWHaxmhlWpYVXUsWZ8gNNW6RUwnIqYspNZeknUiY3gw0Z6S62qsuLYSgUeGGHQ+3w4zg9a4rmGuQaxNwcneak/tjOGypq1Bb2AiuQk9YlP4TSVWhJ3CTHSv9tG4hnrYaJJbc8jcLj7gtlPzSBl1b2/Z9Wm4m+FApRyJkukebqYlETPcl7kLjkoajUS0CjjlzvNDq37RGoybEHdCFuixUekyHgFvOOx+e8+GNUzu5ePPp9M6XLMnskvm+MzvQZPGS1EqdxKvzd7dzb7+eZAkZJMR9+e8XzuzW/2YdvHYJ+/ccvNfE3kuXstPIl799PPv58vUWtq//ae+iWMAOGRx6yUkclJv7B/dLG+vr/sE6RulvFmvVlSAIVovuuVDatORsT6u+6OLyaYDzAy3SWgw4suRDGqRJEg1phWHslMkuFdbQMudgjNICDD3UKkZWx1hmhZJUHdK2ZmnMaAVzRDWrJn8sooEFLSLxfMIMQPcFh5nU6UolCKqrdLfVrDy8i3ns4zFZXZL8Bu+WTu1rAwAA" />
+<input type="hidden" name="iterRows_0" value="VZH4sIAAAAAAAAAGVTTU9TQRQdSkgMVQLo1uQmbiChr6+FQMFVoWBq+orhQ5Zk+np5HXidGWemBZLGxI0uWOBCjUsXLvkH/gV/golG3bp248I7bRXQl8xL7pl7zzlz78zFDzZmDQsS1Q2kiIMEdXCMDSscBiidcKdBjTu0rhw70cUdlE009s2vlfNPb0utDJuosWycKitkUqE8x6Zrh7zL8ymXSX7bGcLv19jNWElneOx8zhP2lI30MWNEQoSdtnXs9pW6VaVS5JIKx5uouXFtsjIsy4imY5NXkmuqL5FVGuXQxTA1qzuNVNjWFWjUSnVdqyodJmiI4ZbrH26VWxFXm75gtMZuDMBB7DkH8RYe1NV1aEe4FK9Dj3na+aclFUWe0J/sWJmjqsP2UOpEO3YnXMxtxi5XDIuLUCishCGUI00ba+VUJNy0IOrYVLRhV9IsDA3ptNdbTzGmPscUQOVvt3q9CNsNNLmqzK21uEmQpjzhfQTeR9Dv2tn3lx/P733OsJGHbKzrzZ4YNnmZVO94iucXr+9mX305yzB2opn/Jr6Ne7NL/5sleD7MbaMewOHCynwIjyLSnrqkHbZ8+uu79z+fvSiRfPWPvG/FOClk6NBTnmK/HO3uLxdL84ul/QJhheX8emVmL5rN+91cccmxD3U8hj3hr1oetlCqLndCSVAHUChCXdkAnBIpOmikKj6ysHkAa+jvYwpamX7uzIONOdigtU1rBzZmgcsmREIqQ5SaCxNARVgal8aBEGH0PGQCgpRcCw0UFoY61mMEQbnZFpKqDPdvB1a9/Bx1aZd+g4Fq/Rs8CqqygQMAAA==" />
+<input type="hidden" name="iterRows_0" value="VZH4sIAAAAAAAAAGVSv2/TQBi9JqqEGojaAiPSSSww2HEsUdIyJU0HozgBksIYXeyvzpXznTmf00SKkFhg6FAGQIwMjP1T+BOQ+CEYmVkYuEsMScDycs/ve+/d+3z+A62nEtmRGNmcBnYEiX0Cg5QqsIErqiZ2iyhIVT1QdAQ94CHI9M2vvbOPb2vDAiq3UClgIqU8amqeQtutYzIiFUZ4VOkqqfE7LXQxEFxJEijDeYKeorUZJiWNtGAWpwpdXpprCMGAcD24EUJCpIp1lHysQEOFNpfILTGzKIkEeJ4ip5aSbMBoOlyCiikXq14eVxCB1AqX1OxyDZLSwAvNQLGFLszB+dlozs8P4KgtVqEeVQxWoYeEZf9U0hQ6E5ibnQj52FMQ51bjRKErzi2rEyjLddwdXK3uOQ6u+4n+sF9nNCJyiP0sZTTGh1zvQuolTabTAwaB7jnQB9z829Z06kM8AGl53NofEhmB3nLZ5LBNDnvW2um3lx/Orn8qoLW7aH1kwo4l2lyQ2pmReH7++lrp1efTAkLjBJmn/OW7Cbvzf1gNu7tWF5Icdg18z9feWwvZvPLtr+/e/3z2oqbtvT/2pooN7VDUl94yEv26f9jfdWtVZ6dfVehq27tvOW7loHnjkX+zYhiWe1uhTg/iREgiJ5gylsWUE0UFx/pddIUbGWWh/kdSg3eCQG/acI5wl0rcnUCIm2SCjWiS/AYixZKBGQMAAA==" />
+<input type="hidden" name="iterRows_0" value="VZH4sIAAAAAAAAAGVSv28TMRh1UyqhBKK2sCJZYs7lepCQlik/GFJdStWkXSPn7uvF1Gcfti9NpAiJBYYOZQDEyMDYP4U/AYkfYmVmYcBODpKAt+/5fd9737OvfqANJZETiZHDaeBEkDjnMFBUgwNcUz1xfKJB6Xqg6Qh6wEOQ6u2vvctP72rDHCr6qBAwoSiPWoan0bb/hIxImREelbtaGvyhj24EgmtJAm05T9EztDbDpKSRGZjGSqNbS30NIRgQbhrzISRE6thYydpyNNRoc4nsi5lEQSTAMxcZtZCkA0bVcAlaV1ysarW5hgikmXBTz5ZrEEWDdmgb1n10fQ7OaztzXh/B6YFYhXpUM1iFTghL/4mkJYwnsJudC3nW1hBnUuNEo9tupfQ40CXP9ap4Z2fPdXG9k5iLZp3RiMgh7qSK0Rgfc/MW0jzSZDptpJSFZnHc+hvVdLog4Ec8ohxMIVHR+nCsD2eW2sX3Vx8v737OobV9tDGyZscSbS5IB2k8APni6s2dwusvFzmExgmyp/i1ZM1W/zdrYK9W6kKSwZ6FDztGe2sxNot8+9v7Dz+fv6wZ+fYfeRtF3ihcM0tv2RH9eue4v+s92L1X6e9olK+55QYLo7JX1Wj/CBJGArArY3GK3fu4RWISQYgPT5q4R/iZsnjFNSaY+dFS4SZJSGBj6UrcDYbmo+GGmKgk+Q0bXeA/CQMAAA==" />
+<input type="hidden" name="iterRows_0" value="VZH4sIAAAAAAAAAGVSv28TMRh1U0VCCURtYUWyxMCUyw/UNClTQpAIuhSUtKyRc/f1ztRnG9uXpFKExAJDhzIAYmRg7J/Cn4DED7EyszBgJ6FJ4Bbre37f9973fBc/UVYr5EVi5HEaeBFIbwxDTQ14wA01p55PDGjTDAwdwSHwEJR+93v//PP7epxBBR/lAyY05VHb8gza8Z+SESkxwqNS3yiL3/XR1UBwo0hgHOcZeo42ZphSNLID00QbdH2lryUEA8JtYy4ESZRJrJVFW4aGBm2tkH0xk8gLCXzhYkHNy3TIqI5XoE3NxbpWhxuIQNkJ18xsuRbRNOiErmHTR1fm4Lx2M+d1D44PxDp0SA2DdegJYek/kbSF9QRus7FQJx0DyUJqIg26Ud4tPgpMsVqu1nClsl8u42ZX2ot7TUYjomLcTTWjCT7i9i2UfaTT6bSVUhbaxXH7MqrpdEnA93lEOdhCoYLz4Tkf3iy1sx+vP53f+pJBGw9RduTMThTaWpIO0mQI6uXF25v5N1/PMghNJHJf4dttZ7b2v1kLV+vFPshLeNfBVnt7OXYR+c73Dx9/vXhVt/Kdv/IuipxVyNqlt92IQbN7NGhU9xp3yoOKQbm9RqnFwqhUrRkkKe7ZnanCbaptkhLc74bBBFgcYxMD7gmRaEx4iG0a9iCxu+nHoMaEU/yAMIYpxV1y4hrxYyVGdJZlkMqhICpc50r5ByFVR/YvAwAA" />
+<input type="hidden" name="iterRows_0" value="VZH4sIAAAAAAAAAGVRPW8TQRDdOApCcYiSQIu0Eg1I8flDihNC5cSRcGQHKU5IGa3Pk/PC3u6xO+c4koVEA0WKUACipKBMxe/gJyARIVpqGgpm7YPE4OKsefPmzds35z/YjLMsiEw/0DIMIkiCY+g4iRCARoknQVMgOKyFKPuwB7oL1r37tX725f1aL8fmmywfKuOkjurEQ7bUfCL6oqiEjopttIQ/aLK50Gi0IkTPecaes6kRZq2MSDCNHbKbV+Y2jFEgNA3OdiERFmOyko3lZBfZwhVy04xW5E0COnORUfNJ2lHS9a5A006byV0NjRCBJYUbOHrchnAybHT9wHSTXR+D49prjutdONoxk9CeRAWT0GOh0n8iqRvyBP5lx8Y+bSDE2apBguxWaaXwKMRCpVSp8nJ5vVTitVZCjc2akpGwPd5KnZIx39d0C0tHOhkOtxSElHNIBa//TWs4bEHcAVto6MJmT9gI6Mrz3kfgfQSj1E6/v/58dudrjk1ts5m+NzuwbOGStJN6iZfnb2/n31yc5hgbJMz/5i/mvNnq/2YJrqwU2pBMwrR78VI2i3zp24ePP1+8WqP1jT/rfRSztOEaPXrRSxzWWvuH9yur1Wr5sExYea24Vb970LpX9N1CZRXZJ69ntVA8i+JIhgKl0bzIdyFRIgSfCD+gwLk54nURiwh4XTridtIRc8MMlolMaTkUSo3HibspbZhK5EJ3eTvtxEJqLpBvCwWgeM84pD/fbBnqZHVNaxiAH28HOwF/SILLFMJ+QN/xHZPkN/AHhk54AwAA" />
+<input type="hidden" name="iterRows_0" value="VZH4sIAAAAAAAAAF1Rv2/TQBi9pqpADVRtYQWdxFw7SflRynSx3drR2Y7OdqtKSNXVORyDY5vzOW2lCIkFhg5lAMTIwNiBP4Q/gAEJhFiZWRg4J6nacNv37nvfe+/7zn6DhYIDJcqGShqHSsRy5ZAdFLFgCktFLI4VTAUrBApFPGQ+S3uMF+//bp5++7DRr4ElDOphkhVxGumyT4BV/JQOqZrQNFI9wSX+CINrYZYKTkNR9TwHL8DcGOM8juTAclAIcOMSr51lCaOpJC72WE65GEgrU1ot7gmwfKkZZ2OJepazdOpi2lrPy4MkLvqXoPkizWa1rFSwiHE54boYh2vTIg6tXkWYx+DqBJzU1cxJTdgTJ5uF/FgkbBbaoUn530r0THpiVbLDjD+zBBtMpY5yAW42W2tuKNZajdZ92Li72WjArp3Lj8coiSPK+9AuiyQewCCVt+DySMejUYce0j7lCU2gw/q8hDbrxaGstCxJZDRoZkUeC5qMRuc/XpkzeZmxyVTI8y9VBpXKoDJe58mvN19O73yvgbkOWBhWKY44WL5ocsrBAeOvzt7dqr/9cVID4CgH1Vv6OqxSrM+kWK9STMJ5LJ/CzQkstVcuxk5vsfrz46c/L19vSHnrXL7a0aJUuCK3sVKN2Ed2sP+wdW9j/cF+U4DbHcfWTLUbEBWjwNHJnkq2umrVqTabDQE+u4HvuQHRLGcbultQc+0uMUzD8awdA7YRIZZB4JQLPYPsWJrhQdeB7cDCOnR3Heh2DYJ8AyJHhz5BjrclKbarGxgiH3bQLjIRwQhDxzBJAG1DtzRZaS7GxvaEZrpe1/IliLC1jYgJ7cDDlg0DR9ognuXvnf/k+T/MvcdxnAMAAA==" />
+</div>
+										
+									<tr>
+										<td>
+											<!-- interface_elements -->
+												<table width="92%" border="0" align="center" cellpadding="0" cellspacing="0">
+													<tr>
+														<td>&nbsp</td>
+													</tr>
+													<tr>
+														<td valign="left">
+															<table width="100%" cellpadding="0" cellspacing="0">
+																<tr>
+																	<td valign="bottom" class="pageheader" align="left">Tenders By Organisation</td>
+																	<td align="right" width="80"><a id="PageLink_13" title="Back" class="customButton_link" value="Back" href="/eprocure/app?page=FrontEndTendersByOrganisation&amp;service=page">Back</a></td>
+																</tr>
+															</table>
+														</td>
+													</tr>
+													<tr>
+														<td>&nbsp;</td>
+													</tr>
+																								
+													<tr>
+														<td>&nbsp</td>
+													</tr>
+													<span id="If_17">	
+														<tr>
+															<td bgColor="#757575">
+															
+																
+
+<table border="0" bgColor="#f7f7f7" cellpadding="0" width="100%" cellspacing="1" id="table" class="list_table">
+	
+																	<tr class="list_header">																		
+																		<td width="5%" >S.No</td>
+																		<td  width="15%">e-Published Date</td>
+																		<td width="15%" >Closing Date</td>
+																		<td width="15%" >Opening Date</td>
+																		<td width="20%" >Title and Ref.No./Tender ID</td>
+																		<td width="15%" >Organisation Chain</td>																																														
+																	</tr>																												
+																	
+
+
+	<tr class="even" id="informal">
+																				        																												
+       																	<td align="center">1</td>
+       																	<td align="center">01-Oct-2026 04:00 PM</td>
+       																	<td align="center">07-Oct-2026 11:00 AM</td>
+       																	<td align="center">08-Oct-2026 11:00 AM</td>
+       																	<!-- <td align="center"><span jwcid="@Insert" value="ognl:currentRow.tenderRefNo" /></td> -->
+       																	<td align="center"><a id="DirectLink" title="View Tender Information" href="/eprocure/app?component=%24DirectLink&amp;page=FrontEndViewTender&amp;service=direct&amp;session=T&amp;sp=SPv9Vla0ocgDAeoJbuyoQ8g%3D%3D">[Providing Spare / Emergency Supply Cable and its Accessories from Substation of Trauma Centre to Central Sterilization Service Department (CSSD) JNMCH, AMU, Aligarh]</a>
+																				[07/ED(SSS)/2026-27][2026_AMU_926330_3]
+																		</td>
+       																	<td align="center">Aligarh Muslim University||Electricity Department||Member-In-Charge</td>       																	       																	       																	  
+       																
+	</tr>
+
+	<tr class="odd" id="informal_0">
+																				        																												
+       																	<td align="center">2</td>
+       																	<td align="center">30-Sep-2026 04:30 PM</td>
+       																	<td align="center">06-Oct-2026 11:00 AM</td>
+       																	<td align="center">07-Oct-2026 11:00 AM</td>
+       																	<!-- <td align="center"><span jwcid="@Insert" value="ognl:currentRow.tenderRefNo" /></td> -->
+       																	<td align="center"><a id="DirectLink_0" title="View Tender Information" href="/eprocure/app?component=%24DirectLink&amp;page=FrontEndViewTender&amp;service=direct&amp;session=T&amp;sp=SC0kNM7bFrYsUPzhgUj3p7g%3D%3D">[New Wiring/ Renovation of 12 Nos. toilet blocks Of Central portion (GF, FF, SF, T F) and Minor Repair. Distempering/ painting in other 14 toilets in the Administrative Block, AMU, Aligarh]</a>
+																				[19/ED(WM)/2026-27][2026_AMU_928368_1]
+																		</td>
+       																	<td align="center">Aligarh Muslim University||Electricity Department||Member-In-Charge</td>       																	       																	       																	  
+       																
+	</tr>
+
+	<tr class="even" id="informal_1">
+																				        																												
+       																	<td align="center">3</td>
+       																	<td align="center">29-Sep-2026 12:00 PM</td>
+       																	<td align="center">05-Oct-2026 11:00 AM</td>
+       																	<td align="center">06-Oct-2026 11:00 AM</td>
+       																	<!-- <td align="center"><span jwcid="@Insert" value="ognl:currentRow.tenderRefNo" /></td> -->
+       																	<td align="center"><a id="DirectLink_1" title="View Tender Information" href="/eprocure/app?component=%24DirectLink&amp;page=FrontEndViewTender&amp;service=direct&amp;session=T&amp;sp=SLr5xz6F%2BmAdDaiOBfOP4aw%3D%3D">[Temporary illumination on University Buildings on Occasion of Sir Syed Day 2026]</a>
+																				[NIQ-02/ED(WM)/2026-27][2026_AMU_928106_1]
+																		</td>
+       																	<td align="center">Aligarh Muslim University||Electricity Department||Member-In-Charge</td>       																	       																	       																	  
+       																
+	</tr>
+
+	<tr class="odd" id="informal_2">
+																				        																												
+       																	<td align="center">4</td>
+       																	<td align="center">28-Sep-2026 12:00 PM</td>
+       																	<td align="center">05-Oct-2026 11:00 AM</td>
+       																	<td align="center">06-Oct-2026 11:00 AM</td>
+       																	<!-- <td align="center"><span jwcid="@Insert" value="ognl:currentRow.tenderRefNo" /></td> -->
+       																	<td align="center"><a id="DirectLink_2" title="View Tender Information" href="/eprocure/app?component=%24DirectLink&amp;page=FrontEndViewTender&amp;service=direct&amp;session=T&amp;sp=Sx36PbM5d8KGrLA7k3eOGEQ%3D%3D">[Replacement of 04 Damaged PVC Tanks of 5000 liters Capacity Sr School Boys]</a>
+																				[80/Bldg/26][2026_AMU_927935_1]
+																		</td>
+       																	<td align="center">Aligarh Muslim University||Building Department||University Engineer</td>       																	       																	       																	  
+       																
+	</tr>
+
+	<tr class="even" id="informal_3">
+																				        																												
+       																	<td align="center">5</td>
+       																	<td align="center">28-Sep-2026 11:50 AM</td>
+       																	<td align="center">05-Oct-2026 11:00 AM</td>
+       																	<td align="center">06-Oct-2026 11:00 AM</td>
+       																	<!-- <td align="center"><span jwcid="@Insert" value="ognl:currentRow.tenderRefNo" /></td> -->
+       																	<td align="center"><a id="DirectLink_3" title="View Tender Information" href="/eprocure/app?component=%24DirectLink&amp;page=FrontEndViewTender&amp;service=direct&amp;session=T&amp;sp=Svw3xO6AM1TkTi0QdRbcM6A%3D%3D">[i Repair Distempering etc of the Rooms and verandah of Sherwani Hall ii Making  Providing cupboard Sherwani Hall]</a>
+																				[79/Bldg/26][2026_AMU_927930_1]
+																		</td>
+       																	<td align="center">Aligarh Muslim University||Building Department||University Engineer</td>       																	       																	       																	  
+       																
+	</tr>
+
+	<tr class="odd" id="informal_4">
+																				        																												
+       																	<td align="center">6</td>
+       																	<td align="center">25-Sep-2026 11:00 AM</td>
+       																	<td align="center">05-Oct-2026 11:00 AM</td>
+       																	<td align="center">06-Oct-2026 11:00 AM</td>
+       																	<!-- <td align="center"><span jwcid="@Insert" value="ognl:currentRow.tenderRefNo" /></td> -->
+       																	<td align="center"><a id="DirectLink_4" title="View Tender Information" href="/eprocure/app?component=%24DirectLink&amp;page=FrontEndViewTender&amp;service=direct&amp;session=T&amp;sp=S6Nel2ex3Q%2B%2FVhGn9niEhQA%3D%3D">[Internal Electrification / Replacement Work of Damage Distribution Box, Re-Installation of Circuit and Submain at Jaleel hostel and Moin hostel Annexe of S.N. Hall, AMU., Aligarh]</a>
+																				[18/ED(WM)/2026-27][2026_AMU_927661_1]
+																		</td>
+       																	<td align="center">Aligarh Muslim University||Electricity Department||Member-In-Charge</td>       																	       																	       																	  
+       																
+	</tr>
+
+	<tr class="even" id="informal_5">
+																				        																												
+       																	<td align="center">7</td>
+       																	<td align="center">12-Sep-2026 01:30 PM</td>
+       																	<td align="center">12-Oct-2026 04:00 PM</td>
+       																	<td align="center">13-Oct-2026 04:30 PM</td>
+       																	<!-- <td align="center"><span jwcid="@Insert" value="ognl:currentRow.tenderRefNo" /></td> -->
+       																	<td align="center"><a id="DirectLink_5" title="View Tender Information" href="/eprocure/app?component=%24DirectLink&amp;page=FrontEndViewTender&amp;service=direct&amp;session=T&amp;sp=Sa5MbmbBW8A7r1mT%2FGW0BmQ%3D%3D">[OUTSOURCING OF COMPREHENSIVE BARRIER LAUNDRY SERVICES ON BUILD OWN OPERATE AND TRANSFER MODEL AT JAWAHARLAL NEHRU MEDICAL COLLEGE AND HOSPITAL ALIGARH MUSLIM UNIVERSITY ALIGARH]</a>
+																				[JNMCH/PUR/LAUNDRY/RFP/2026/110][2026_AMU_925837_1]
+																		</td>
+       																	<td align="center">Aligarh Muslim University||Jawaharlal Nehru Medical College Hospital||Medical Superintendent</td>       																	       																	       																	  
+       																
+	</tr>
+
+
+
+																	<tr>																		
+																	</tr>
+																
+</table>
+
+
+															</td>
+														</tr>
+													</span>
+													
+													<tr>
+														<td>&nbsp;</td>
+													</tr>
+											  </table>
+											  <!-- END: interface_elements -->
+										</td>
+									</tr>
+									</form>
+								</table>
+							</td>
+						</tr>								
+					</table>
+					<!-- End : Content Area -->
+			</td>
+		</tr>
+	</table>
+
+							<!-- Page content ends here -->	
+							</td>				
+						</tr>
+					</table>
+				</td>
+			</tr>
+			<tr>
+				<td valign="bottom" height="40">
+					<table width="100%" cellspacing="0" cellpadding="0">
+	 <tr style="background-color:#E8E8E8;"> 
+	 <td height="25" class="text2" align="center"><b>Visitor No:33169590</b></td>
+		
+	  </tr>
+	 <tr style="background-color:#E8E8E8;"> 
+	
+		<td height="25" class="text2" align="center">Contents owned and maintained by concerned Departments in coordination with Finance Department and Information Technology Department, Government of India		  
+		 </td>
+	  </tr>
+	  <tr valign="top" class="secondaryBg"> 
+		<td>
+			<table width="100%" height="22" border="0" cellpadding="1" cellspacing="1">
+
+				
+				<tr class="footer">
+					<td width="40%" valign="top" align="left">Designed, Developed and Hosted by<br/>  <a href="http://www.nic.in" target="_blank" rel="noopener noreferrer" class="footerlink">National Informatics Centre</a></td>
+					<td width="40%" align="left">
+						 Version : 1.09.24 16-Jul-2026<br />
+						(c) 2017 Tenders NIC, All rights reserved.<br/>Site best viewed with a screen resolution 1920 x 1080.</td>					
+					<td width="20%" valign="top" align="right"><a id="PageLink_14" class="footerlink" href="/eprocure/app?page=Disclaimer&amp;service=page">Portal policies</a></td>
+				</tr>
+			</table>
+		</td>
+	  </tr>
+</table>
+				</td>
+			</tr>
+			<tr>
+			    <td>
+			        <form method="post" action="/eprocure/app" id="WebBorder_0">
+<div style="display:none;" id="WebBorder_0hidden"><input type="hidden" name="formids" value="domainUrl" />
+<input type="hidden" name="seedids" value="ZH4sIAAAAAAAAAF2QQU7DMBBF2wU38dKLOIWQLRENqhQQaitYRm4yoVaTGcs2ROVAiAVX4w5MEooqNvYfP/v7z3x9zy7eZ7P55/xDenBvpgIRSatfhq2izhIChlFj0AbBsfbgvSEclOXlGXYZuZqRkitklyCSWG720LZMb/AoEplRfZyubslmGiej1uBBMV01QqUyJycWERdlJOJYLlsPIo5+LUslVHzSsVALuacOCjZgn0fOO8gyOS+upw8fKExd/YF0AgU04R7wlas74ECm+mcn1NU54ViXcg3InY7tKJk7nsoS6ycD/XYE/DrQAXADlYNhbkHvWuCrYcSF8WFNPZ+bAI6VF6k02JDrdMuD6J22FmpWt8ZBFcYUyRA2JwqD/Q/y4MMbsQEAAA==" />
+<input type="hidden" name="component" value="$WebBorder.WebBorder" />
+<input type="hidden" name="page" value="FrontEndViewTender" />
+<input type="hidden" name="service" value="direct" />
+<input type="hidden" name="session" value="T" />
+<input type="hidden" name="submitmode" value="" />
+<input type="hidden" name="submitname" value="" />
+<input type="hidden" name="domainUrl" id="domainUrl" value="Shttps://eprocure.gov.in/eprocure/app" />
+</div>
+				       
+				   </form>
+			    </td>
+			</tr>
+		</table>
+	</div>
+<script type="text/javascript"><!--
+tapestry.addOnLoad(function(e) {
+dojo.require("tapestry.form");tapestry.form.registerForm("FrontEndViewTender");
+
+tapestry.form.registerForm("WebBorder_0");});
+// --></script></body>
+</html>

@@ -1,0 +1,50 @@
+[project]
+name = "tenderlens"
+version = "0.1.0"
+description = "Crawls public Indian government tenders, stores them idempotently, resolves buyer organisations and serves them through a searchable API."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "django>=5.2,<5.3",
+    "djangorestframework>=3.16",
+    "django-filter>=25.1",
+    "drf-spectacular>=0.28",
+    "psycopg[binary]>=3.2",
+    "celery[redis]>=5.5",
+    "redis>=5.2",
+    "httpx>=0.28",
+    "beautifulsoup4>=4.13",
+    "lxml>=5.3",
+    "pydantic>=2.10",
+    "rapidfuzz>=3.12",
+    "elasticsearch>=8.15,<9",
+    "gunicorn>=23.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-django>=4.10",
+    "ruff>=0.9",
+    "respx>=0.22",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "es: needs a running Elasticsearch (skipped when ES_URL is unreachable)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["frontend", "*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "DJ", "SIM"]
+ignore = ["E501", "DJ008"]
