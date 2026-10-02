@@ -31,6 +31,7 @@ jobs:
       EMAIL_BACKEND: ${{ vars.EMAIL_BACKEND || 'django.core.mail.backends.console.EmailBackend' }}
       SITE_URL: ${{ vars.SITE_URL }}
       CRAWLER_SOURCES: ${{ vars.CRAWLER_SOURCES || 'central,mp' }}
+      CRAWLER_TIMEOUT: "60" # mp portal intermittently exceeds 30s; avoid false-failure timeouts
       RAW_LISTING_RETENTION_DAYS: "0" # only needed during the run
       RAW_DETAIL_RETENTION_DAYS: "2" # pages behind stored tenders are always kept
       CRAWL_ITEM_RETENTION_DAYS: "7" # run totals stay on crawl_run
