@@ -10,3 +10,5 @@ frontend/dist/
 backups/
 frontend/*.tsbuildinfo
 scripts/.cache/
+.vercel
+.env*.local
