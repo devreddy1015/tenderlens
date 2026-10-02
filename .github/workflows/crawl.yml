@@ -1,0 +1,58 @@
+name: crawl
+# Scheduled crawls for the Vercel deployment, which has no Celery worker or beat.
+# Same schedule as CELERY_BEAT_SCHEDULE in config/settings.py (times there are IST).
+on:
+  schedule:
+    - cron: "35 * * * *" # hourly incremental (:05 IST)
+    - cron: "0 21 * * *" # nightly full crawl (02:30 IST)
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [incremental, full]
+        default: incremental
+
+concurrency:
+  group: crawl # never two crawls at once; a queued run waits for the current one
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DJANGO_SECRET_KEY: crawler-does-not-sign-anything
+      ES_ENABLED: "false"
+      # No broker here: index_tender and send_alerts run inline after each commit.
+      CELERY_TASK_ALWAYS_EAGER: "true"
+      EMAIL_BACKEND: ${{ vars.EMAIL_BACKEND || 'django.core.mail.backends.console.EmailBackend' }}
+      SITE_URL: ${{ vars.SITE_URL }}
+      CRAWLER_SOURCES: ${{ vars.CRAWLER_SOURCES || 'central,mp' }}
+      MODE: ${{ inputs.mode || (github.event.schedule == '0 21 * * *' && 'full') || 'incremental' }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::DATABASE_URL secret is not set; skipping the crawl."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.cfg.outputs.skip != 'true'
+        uses: actions/checkout@v4
+      - if: steps.cfg.outputs.skip != 'true'
+        uses: astral-sh/setup-uv@v5
+      - if: steps.cfg.outputs.skip != 'true'
+        run: uv sync --frozen --no-dev
+      - if: steps.cfg.outputs.skip != 'true'
+        run: uv run python manage.py migrate --noinput
+      - if: steps.cfg.outputs.skip != 'true'
+        name: Crawl
+        run: |
+          status=0
+          for source in ${CRAWLER_SOURCES//,/ }; do
+            echo "::group::$source ($MODE)"
+            uv run python manage.py crawl --source "$source" --mode "$MODE" --sync || status=1
+            echo "::endgroup::"
+          done
+          exit $status

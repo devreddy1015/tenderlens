@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
 from celery.schedules import crontab
 
@@ -69,18 +69,38 @@ TEMPLATES = [
     }
 ]
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
+# Hosted Postgres (Neon via the Vercel Marketplace) provides a single DATABASE_URL;
+# docker-compose and local runs use the POSTGRES_* variables.
+if env("DATABASE_URL"):
+    _db_url = urlsplit(env("DATABASE_URL"))
+    _db = {
+        "NAME": unquote(_db_url.path.lstrip("/")),
+        "USER": unquote(_db_url.username or ""),
+        "PASSWORD": unquote(_db_url.password or ""),
+        "HOST": _db_url.hostname or "",
+        "PORT": str(_db_url.port or 5432),
+        "OPTIONS": dict(parse_qsl(_db_url.query)),  # e.g. sslmode=require
+    }
+else:
+    _db = {
         "NAME": env("POSTGRES_DB", "tenderlens"),
         "USER": env("POSTGRES_USER", "tenderlens"),
         "PASSWORD": env("POSTGRES_PASSWORD", "tenderlens"),
         "HOST": env("POSTGRES_HOST", "localhost"),
         "PORT": env("POSTGRES_PORT", "5432"),
+        "OPTIONS": {},
+    }
+# Fail fast when the database is unreachable instead of waiting ~2 min for TCP; long enough
+# for a scaled-to-zero Neon compute to wake up.
+_db["OPTIONS"].setdefault("connect_timeout", 10)
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        **_db,
         "CONN_MAX_AGE": 60,
         "CONN_HEALTH_CHECKS": True,
-        # Fail fast when the database is unreachable instead of waiting ~2 min for TCP.
-        "OPTIONS": {"connect_timeout": 5},
+        # PgBouncer in transaction mode (Neon's "-pooler" host) cannot keep server-side cursors.
+        "DISABLE_SERVER_SIDE_CURSORS": "-pooler" in _db["HOST"],
     }
 }
 
