@@ -7,12 +7,13 @@
     },
     "frontend": {
       "root": "frontend",
-      "framework": "vite"
+      "framework": "vite",
+      "rewrites": [{ "source": "/((?!assets/).*)", "destination": "/index.html" }]
     }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": { "service": "app" } },
-    { "source": "/admin/(.*)", "destination": { "service": "app" } },
+    { "source": "/admin/:path*", "destination": { "service": "app" } },
     { "source": "/static/(.*)", "destination": { "service": "app" } },
     { "source": "/health", "destination": { "service": "app" } },
     { "source": "/(.*)", "destination": { "service": "frontend" } }

@@ -1,0 +1,11 @@
+# The Vercel CLI uploads gitignored files and the Python builder bundles them into the function.
+.env
+.venv/
+staticfiles/
+backups/
+scripts/.cache/
+.pytest_cache/
+.ruff_cache/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo

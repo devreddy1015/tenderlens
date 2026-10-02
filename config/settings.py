@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from celery.schedules import crontab
 
@@ -78,6 +79,8 @@ DATABASES = {
         "PORT": env("POSTGRES_PORT", "5432"),
         "CONN_MAX_AGE": 60,
         "CONN_HEALTH_CHECKS": True,
+        # Fail fast when the database is unreachable instead of waiting ~2 min for TCP.
+        "OPTIONS": {"connect_timeout": 5},
     }
 }
 
@@ -164,12 +167,23 @@ SPECTACULAR_SETTINGS = {
 REDIS_URL = env("REDIS_URL", "redis://localhost:6379/0")
 
 # Cache (API throttle counters) in its own Redis database, never the Celery broker's:
-# a cache flush must not be able to delete queued tasks.
+# a cache flush must not be able to delete queued tasks. Hosted Redis URLs often have no
+# "/<db>" path, so the database is set on the parsed URL rather than by string splitting.
+# With no Redis configured at all (e.g. a serverless deploy), throttle counters fall back to
+# per-process memory instead of turning every API request into a connection error.
+_cache_url = env("REDIS_CACHE_URL") or (
+    urlunsplit(urlsplit(env("REDIS_URL"))._replace(path="/1")) if env("REDIS_URL") else ""
+)
 CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": env("REDIS_CACHE_URL", REDIS_URL.rsplit("/", 1)[0] + "/1"),
-    }
+    "default": (
+        {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": _cache_url,
+            "OPTIONS": {"socket_connect_timeout": 2, "socket_timeout": 2},
+        }
+        if _cache_url
+        else {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+    )
 }
 
 # --- Celery -----------------------------------------------------------------
