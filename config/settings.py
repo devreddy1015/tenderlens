@@ -256,6 +256,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "ingest.tasks.prune_raw_pages",
         "schedule": crontab(minute=0, hour=4),
     },
+    "prune-crawl-items": {  # no-op unless CRAWL_ITEM_RETENTION_DAYS is set
+        "task": "ingest.tasks.prune_crawl_items",
+        "schedule": crontab(minute=10, hour=4),
+    },
 }
 
 # --- Crawler ----------------------------------------------------------------
@@ -271,6 +275,16 @@ CRAWLER = {
     "SOURCES": env("CRAWLER_SOURCES", "central").split(","),
     # Listing/index pages are only needed for change detection; details are kept.
     "RAW_LISTING_RETENTION_DAYS": int(env("RAW_LISTING_RETENTION_DAYS", "7")),
+    # Unset: keep every detail page. Set (small hosted databases): after this many days,
+    # delete detail pages that no tender or quarantine row points at.
+    "RAW_DETAIL_RETENTION_DAYS": (
+        int(env("RAW_DETAIL_RETENTION_DAYS")) if env("RAW_DETAIL_RETENTION_DAYS") else None
+    ),
+    # Unset: keep per-tender crawl outcomes forever. Set: delete those of finished runs older
+    # than this; the run's totals stay on CrawlRun.
+    "CRAWL_ITEM_RETENTION_DAYS": (
+        int(env("CRAWL_ITEM_RETENTION_DAYS")) if env("CRAWL_ITEM_RETENTION_DAYS") else None
+    ),
 }
 
 # --- Elasticsearch ----------------------------------------------------------

@@ -153,6 +153,55 @@ def test_prune_keeps_detail_pages(portal):
     assert RawPage.objects.filter(kind="detail").count() == 7
 
 
+def test_prune_detail_retention_keeps_pages_still_referenced(make_page, settings):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from ingest.loader import load_detail_page
+    from tests.conftest import fixture_text
+
+    old = timezone.now() - timedelta(days=30)
+    html = fixture_text("gepnic_central/detail_01.html")
+    current = make_page(html, fetched_at=old)
+    load_detail_page(current)  # tender points at this page
+    refetched = make_page(html, fetched_at=old)
+    assert load_detail_page(refetched).outcome == "unchanged"  # nobody points at it
+    broken = make_page(fixture_text("broken/detail_closes_before_published.html"), fetched_at=old)
+    assert load_detail_page(broken).outcome == "quarantined"
+    recent = make_page(html)
+
+    assert tasks.prune_raw_pages.apply().get() == 0  # unset: detail pages are kept
+    settings.CRAWLER = {**settings.CRAWLER, "RAW_DETAIL_RETENTION_DAYS": 7}
+    assert tasks.prune_raw_pages.apply().get() == 1
+    assert set(RawPage.objects.values_list("pk", flat=True)) == {current.pk, broken.pk, recent.pk}
+    assert Tender.objects.get().raw_page_id == current.pk
+
+
+def test_prune_crawl_items_only_old_finished_runs(db, settings):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    old = timezone.now() - timedelta(days=30)
+    runs = {
+        status: CrawlRun.objects.create(source="central", status=status)
+        for status in (CrawlRun.Status.SUCCEEDED, CrawlRun.Status.RUNNING)
+    }
+    CrawlRun.objects.update(started=old)
+    recent = CrawlRun.objects.create(source="central", status=CrawlRun.Status.SUCCEEDED)
+    for run in [*runs.values(), recent]:
+        CrawlItem.objects.create(crawl_run=run, source_tender_id=f"T{run.pk}")
+
+    assert tasks.prune_crawl_items.apply().get() == 0  # unset: keep everything
+    settings.CRAWLER = {**settings.CRAWLER, "CRAWL_ITEM_RETENTION_DAYS": 7}
+    assert tasks.prune_crawl_items.apply().get() == 1
+    assert set(CrawlItem.objects.values_list("crawl_run_id", flat=True)) == {
+        runs[CrawlRun.Status.RUNNING].pk,
+        recent.pk,
+    }
+
+
 def test_redelivered_crawl_listing_does_not_reset_finished_items(portal, captured):
     run = CrawlRun.objects.create(source="central", mode="full")
     tasks.crawl_listing.apply(args=(run.pk,)).get()

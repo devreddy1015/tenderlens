@@ -20,7 +20,7 @@ from django.utils import timezone
 from ingest import pipeline
 from ingest.fetcher import Fetcher, FetchError
 from ingest.loader import load_detail_page
-from ingest.models import CrawlItem, CrawlRun, DeadLetter, RawPage
+from ingest.models import CrawlItem, CrawlRun, DeadLetter, Quarantine, RawPage
 from ingest.parsers.gepnic import StaleSession
 from ingest.ratelimit import RedisRateLimiter
 from ingest.sources import get_source
@@ -182,9 +182,43 @@ def close_stale_runs(max_age_hours: int = 6) -> list[int]:
 
 @shared_task
 def prune_raw_pages() -> int:
-    """Index/listing pages are only needed for a few days; detail pages are kept."""
-    cutoff = timezone.now() - timedelta(days=settings.CRAWLER["RAW_LISTING_RETENTION_DAYS"])
+    """Index/listing pages are only needed for a few days; detail pages are kept.
+
+    With RAW_DETAIL_RETENTION_DAYS set, an old detail page is deleted too unless a tender or
+    a quarantine row points at it. A tender's raw_page only moves when its parsed content
+    changes, so this keeps the page behind every stored tender (backfill still works) and
+    drops re-fetches that changed nothing.
+    """
+    now = timezone.now()
+    cutoff = now - timedelta(days=settings.CRAWLER["RAW_LISTING_RETENTION_DAYS"])
     deleted, _ = RawPage.objects.filter(
         kind__in=[RawPage.Kind.INDEX, RawPage.Kind.LISTING], fetched_at__lt=cutoff
     ).delete()
+    detail_days = settings.CRAWLER["RAW_DETAIL_RETENTION_DAYS"]
+    if detail_days is not None:
+        from tenders.models import Tender
+
+        n, _ = (
+            RawPage.objects.filter(
+                kind=RawPage.Kind.DETAIL, fetched_at__lt=now - timedelta(days=detail_days)
+            )
+            .exclude(pk__in=Tender.objects.filter(raw_page__isnull=False).values("raw_page"))
+            .exclude(pk__in=Quarantine.objects.filter(raw_page__isnull=False).values("raw_page"))
+            .delete()
+        )
+        deleted += n
+    return deleted
+
+
+@shared_task
+def prune_crawl_items() -> int:
+    """Per-tender outcomes of finished runs, after CRAWL_ITEM_RETENTION_DAYS (unset: keep)."""
+    days = settings.CRAWLER["CRAWL_ITEM_RETENTION_DAYS"]
+    if days is None:
+        return 0
+    deleted, _ = (
+        CrawlItem.objects.filter(crawl_run__started__lt=timezone.now() - timedelta(days=days))
+        .exclude(crawl_run__status=CrawlRun.Status.RUNNING)
+        .delete()
+    )
     return deleted
