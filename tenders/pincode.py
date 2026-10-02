@@ -158,3 +158,11 @@ def state_from_pincode(pincode: str | None) -> str:
         if state:
             return state
     return ""
+
+
+# Every state / union territory name this module can return.
+ALL_STATES = (
+    frozenset(_TWO_DIGIT.values())
+    | frozenset(_THREE_DIGIT.values())
+    | frozenset(_LONG_PREFIX.values())
+)

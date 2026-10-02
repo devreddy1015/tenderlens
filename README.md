@@ -2,7 +2,17 @@
 
 Crawls public Indian government tenders from NIC's GePNIC portals, stores them
 idempotently in PostgreSQL, resolves buyer-organisation spellings into entities, and
-serves everything through a searchable REST API and a small React UI.
+serves everything through a searchable REST API and a React website:
+
+* **Search** with typo tolerance and partial words, filters by sector, state, PIN area,
+  value and type, with live facet counts
+* **India map**: open tenders per state (official Survey of India boundaries), with a
+  table view and a per-sector filter
+* **Sectors**: every tender sorted into the kind of work (roads, IT, security, health…)
+* **Email alerts**: sign in with Google, pick states and/or PIN areas (e.g. 490xxx for
+  Bhilai/Durg), sectors, keywords and a minimum value; get a digest after each crawl
+* **Light/dark mode**, feedback form, "private tenders: coming soon" waitlist, and a
+  Django admin for feedback, alerts, crawl runs and quarantine
 
 **Stack:** Python 3.12 · Django 5.2 + DRF · PostgreSQL 16 · Celery 5 + Redis ·
 Elasticsearch 8 · React 19 + TypeScript · Docker · Nginx
@@ -181,6 +191,28 @@ is re-indexed by a Celery task after each upsert commits. If Elasticsearch is do
 facets with `GROUP BY`. The response's `search_backend` field says which engine
 answered.
 
+**Sectors.** `tenders/sectors.py` combines, in order: distinctive title words (CCTV,
+software), the portal's *specific* Product Category ("Civil Works - Highways"), ordered
+title keyword rules, the portal's *generic* category ("Civil Works"), and finally the tender
+category. The generic categories alone cover 40% of tenders ("Civil Works" is 778 of
+2,686), which is why title rules sit between the specific and generic categories. Every
+rule that was added came from a real misclassified title; those titles are now test cases.
+
+**Facets are disjunctive.** Each filter group's counts ignore that group's own filter
+(Elasticsearch `post_filter` plus per-facet filter aggregations), so after picking
+"Roads" the sector list still shows the other sectors' counts. Postgres does the same.
+
+**Alerts are at-least-once, never duplicated.** A digest lists open tenders first seen
+since the alert's high-water mark that it hasn't been sent before (`alert_delivery` is
+unique per alert and tender). If the SMTP send fails, nothing is recorded and the next
+run retries. Alerts run when a crawl run that found new tenders finishes, and hourly as
+a fallback.
+
+**Sign-in.** Google Identity Services gives the browser a signed ID token. Django
+verifies its signature, audience, issuer and verified email (`google-auth`), then starts
+an ordinary session. No Google access tokens or passwords are ever stored. Login POSTs
+are CSRF-protected too, so a hostile page can't sign you into someone else's account.
+
 **State.** State portals know their own state. For the central portal, the state comes
 from the pincode (India Post circle prefixes, with 3/4-digit overrides for Goa,
 Uttarakhand, the North-East, etc.).
@@ -194,7 +226,16 @@ OpenAPI docs: `/api/docs/` (schema at `/api/schema/`).
 | `GET /api/tenders?q=&state=&category=&min_value=&max_value=&closes_before=&closes_after=&buyer=&source=&page=&page_size=` | Search and filter, paginated, with facet counts |
 | `GET /api/tenders/{id}` | One tender with organisation chain, dates and provenance |
 | `GET /api/buyers/{id}` | Buyer entity: every merged spelling, tender count, total value |
+| `GET /api/tenders/{id}/similar` | Open tenders with similar titles, same sector first |
 | `GET /api/stats` | Open tenders by state, tenders closing in the next 7 days, last crawl |
+| `GET /api/sectors` | Open tenders, closing this week and value per sector |
+| `GET /api/map?sector=` | Per-state open tenders, closing this week, value, most common sector |
+| `GET /api/config` | Public runtime settings (Google client ID, dev login) |
+| `GET /api/auth/me`, `POST /api/auth/google`, `POST /api/auth/logout` | Session sign-in with a Google ID token (verified server-side) |
+| `GET/POST /api/alerts`, `PATCH/DELETE /api/alerts/{id}`, `POST /api/alerts/{id}/test` | Your email alerts (signed in) |
+| `POST /api/alerts/preview` | How many open tenders match some alert criteria right now |
+| `GET /api/alerts/unsubscribe?token=` | One-click unsubscribe (signed link from the email) |
+| `POST /api/feedback` | Bug reports, data issues, ideas, private-tenders waitlist |
 | `GET /health` | Database / Redis / Elasticsearch status and crawl monitoring |
 
 ## Running it
@@ -208,6 +249,11 @@ OpenAPI docs: `/api/docs/` (schema at `/api/schema/`).
 | `make test` | Test suite (needs `make up` for Postgres/Redis/ES) |
 | `make er-eval` | Entity-resolution precision/recall on the labelled real and synthetic pairs |
 | `make reindex` | Rebuild the Elasticsearch index from Postgres |
+| `make admin` | Create a Django admin user (feedback, alerts, crawl runs at `/admin/`) |
+
+Local development: `docker compose` also runs **Mailpit**, which catches every email at
+http://localhost:8025. With `DJANGO_DEBUG=true` and `DEV_LOGIN_ENABLED=true` in `.env`,
+the sign-in box accepts any email so you can try alerts without a Google client ID.
 
 Sources (`CRAWLER_SOURCES` in `.env`): `central` (eprocure.gov.in), plus `mp`, `odisha`,
 `kerala` and `rajasthan`. All run GePNIC and share one parser.
@@ -217,7 +263,7 @@ Deploying to an Ubuntu server, nightly backups and monitoring: [docs/DEPLOY.md](
 ## Tests
 
 <!-- TESTS:START -->
-140 backend tests (`make test`) and 4 frontend tests (`npm test`). They run against real
+202 backend tests (`make test`) and 8 frontend tests (`npm test`). They run against real
 Postgres, Redis and Elasticsearch, the same services CI starts. Parser tests use pages
 saved from the live portal (`tests/fixtures/`); crawl tests serve those pages through
 a fake portal (`respx`), so nothing touches the network.
@@ -230,8 +276,11 @@ a fake portal (`respx`), so nothing touches the network.
 | `test_pipeline.py` (9) | Crawl twice → zero duplicates; raw pages stored first; incremental skip; stale session renewal; 503 retry; dead-letter; reconciliation mismatch |
 | `test_tasks.py` (8) | Celery chain; worker killed between fetch and load, then every task redelivered → correct counts; retries exhausted → dead letter; redelivered `crawl_listing` doesn't reset progress |
 | `test_resolution.py` (39) | Normalisation, abbreviation and typo merges, state/first-token blocking, review band, sibling departments and place names *not* merged, pincode → state |
-| `test_search_es.py` (14) | Misspelled, stemmed and partial queries; tender-ID lookup; facets equal DB counts; title outranks buyer name; relaxed fallback |
+| `test_search_es.py` (16) | Misspelled, stemmed and partial queries; tender-ID lookup; facets equal DB counts; title outranks buyer name; relaxed fallback |
 | `test_api.py` (10) | Every endpoint, filters, pagination, 400s on bad input, buyer filter returns every spelling variant, OpenAPI lists every endpoint |
+| `test_accounts.py` (10) | Google sign-in with a verified token, account reuse by Google `sub`, forged tokens rejected, CSRF on login, dev login off unless DEBUG |
+| `test_alerts.py` (18) | First digest lists what is open, later digests only new tenders and never repeats, PIN-area (Bhilai 490) matching, failed SMTP retries, unsubscribe link, per-user isolation |
+| `test_feedback_sectors_map.py` (32) | Sector rules on real titles, map regions = stored state names (incl. Ladakh), sectors/map/similar/config endpoints, disjunctive facets, feedback + honeypot + waitlist |
 | `test_commands.py` (6) | `crawl --sync`, `backfill` (re-runnable; fixes data after a parser fix), `resolve_buyers --rebuild`, `er_pairs`/`er_eval` |
 <!-- TESTS:END -->
 

@@ -20,6 +20,10 @@ def _test_settings(settings):
     settings.ES_ENABLED = False
     settings.CELERY_TASK_ALWAYS_EAGER = True
     settings.CELERY_TASK_EAGER_PROPAGATES = True
+    # Private per-test cache: throttle counters must not leak between tests or runs.
+    settings.CACHES = {
+        "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "tests"}
+    }
     settings.CRAWLER = {**settings.CRAWLER, "MIN_INTERVAL_SECONDS": 0.0, "MAX_ATTEMPTS": 3}
 
 

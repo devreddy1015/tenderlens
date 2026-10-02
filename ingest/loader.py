@@ -12,6 +12,7 @@ from ingest.sources import get_source
 from ingest.validation import TenderIn, validate_detail
 from tenders import resolution
 from tenders.pincode import state_from_pincode
+from tenders.sectors import classify as classify_sector
 
 log = logging.getLogger(__name__)
 
@@ -23,12 +24,12 @@ log = logging.getLogger(__name__)
 UPSERT_SQL = """
 INSERT INTO tender (
     source, source_tender_id, ref_no, title, buyer_raw, buyer_entity_id, org_chain,
-    category, product_category, tender_type, value_inr, emd_inr, fee_inr,
+    category, product_category, tender_type, sector, value_inr, emd_inr, fee_inr,
     published_at, closes_at, opens_at, location, pincode, state, url,
     content_hash, fetched_at, raw_page_id, first_seen, last_seen
 ) VALUES (
     %(source)s, %(source_tender_id)s, %(ref_no)s, %(title)s, %(buyer_raw)s, %(buyer_entity_id)s,
-    %(org_chain)s, %(category)s, %(product_category)s, %(tender_type)s, %(value_inr)s,
+    %(org_chain)s, %(category)s, %(product_category)s, %(tender_type)s, %(sector)s, %(value_inr)s,
     %(emd_inr)s, %(fee_inr)s, %(published_at)s, %(closes_at)s, %(opens_at)s, %(location)s,
     %(pincode)s, %(state)s, %(url)s, %(content_hash)s, %(fetched_at)s, %(raw_page_id)s,
     %(fetched_at)s, %(fetched_at)s
@@ -42,6 +43,7 @@ ON CONFLICT (source, source_tender_id) DO UPDATE SET
     category = EXCLUDED.category,
     product_category = EXCLUDED.product_category,
     tender_type = EXCLUDED.tender_type,
+    sector = EXCLUDED.sector,
     value_inr = EXCLUDED.value_inr,
     emd_inr = EXCLUDED.emd_inr,
     fee_inr = EXCLUDED.fee_inr,
@@ -81,6 +83,7 @@ def upsert_tender(
 ) -> tuple[str, int]:
     params = tender.model_dump()
     params.update(
+        sector=classify_sector(tender.title, tender.product_category, tender.category),
         content_hash=tender.content_hash(),
         fetched_at=fetched_at,
         raw_page_id=raw_page_id,

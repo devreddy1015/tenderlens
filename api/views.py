@@ -3,7 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.db import connection
-from django.db.models import Count, Prefetch, Q, Sum
+from django.db.models import Count, F, Prefetch, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -42,7 +42,15 @@ def _page_link(request, page: int | None) -> str | None:
     return request.build_absolute_uri(f"{request.path}?{params.urlencode()}")
 
 
-def _db_queryset(p: dict):
+FACET_PARAMS = {
+    "state": ("state",),
+    "sector": ("sector",),
+    "category": ("category",),
+    "value_range": ("min_value", "max_value"),
+}
+
+
+def _db_queryset(p: dict, *, skip: tuple[str, ...] = ()):
     qs = Tender.objects.select_related("buyer_entity")
     if p.get("q"):
         q = p["q"]
@@ -52,17 +60,16 @@ def _db_queryset(p: dict):
             | Q(ref_no__icontains=q)
             | Q(source_tender_id__iexact=q)
         )
-    if p.get("state"):
-        qs = qs.filter(state=p["state"])
-    if p.get("category"):
-        qs = qs.filter(category=p["category"])
-    if p.get("source"):
-        qs = qs.filter(source=p["source"])
+    for field in ("state", "sector", "category", "source"):
+        if p.get(field) and field not in skip:
+            qs = qs.filter(**{field: p[field]})
+    if p.get("pin"):
+        qs = qs.filter(pincode__startswith=p["pin"])
     if p.get("buyer"):
         qs = qs.filter(buyer_entity_id=p["buyer"])
-    if p.get("min_value") is not None:
+    if p.get("min_value") is not None and "min_value" not in skip:
         qs = qs.filter(value_inr__gte=p["min_value"])
-    if p.get("max_value") is not None:
+    if p.get("max_value") is not None and "max_value" not in skip:
         qs = qs.filter(value_inr__lte=p["max_value"])
     if p.get("closes_before"):
         qs = qs.filter(closes_at__lte=p["closes_before"])
@@ -71,20 +78,37 @@ def _db_queryset(p: dict):
     return qs
 
 
-def _db_facets(qs) -> dict:
+def _db_facets(p: dict) -> dict:
+    """Same disjunctive counting as the Elasticsearch path."""
+
     def terms(field):
+        qs = _db_queryset(p, skip=FACET_PARAMS[field])
         rows = qs.exclude(**{field: ""}).values(field).annotate(n=Count("id")).order_by("-n")[:40]
         return [{"key": r[field], "count": r["n"]} for r in rows]
 
+    base = _db_queryset(p, skip=FACET_PARAMS["value_range"])
     ranges = []
     for key, lo, hi in VALUE_BUCKETS:
-        sub = qs
+        sub = base
         if lo is not None:
             sub = sub.filter(value_inr__gte=lo)
         if hi is not None:
             sub = sub.filter(value_inr__lt=hi)
         ranges.append({"key": key, "count": sub.exclude(value_inr__isnull=True).count()})
-    return {"state": terms("state"), "category": terms("category"), "value_range": ranges}
+    return {
+        "state": terms("state"),
+        "sector": terms("sector"),
+        "category": terms("category"),
+        "value_range": ranges,
+    }
+
+
+DB_ORDER = {
+    "relevance": ("closes_at", "id"),
+    "closing": ("closes_at", "id"),
+    "newest": ("-published_at", "id"),
+    "value": (F("value_inr").desc(nulls_last=True), "closes_at"),
+}
 
 
 class TenderList(APIView):
@@ -117,8 +141,8 @@ class TenderList(APIView):
         if backend == "postgres":
             base = _db_queryset(p)
             total = base.count()
-            rows = list(base.order_by("closes_at", "id")[(page - 1) * size : page * size])
-            facets = _db_facets(base)
+            rows = list(base.order_by(*DB_ORDER[p["sort"]])[(page - 1) * size : page * size])
+            facets = _db_facets(p)
 
         last_page = max(1, -(-total // size))
         return Response(
@@ -262,3 +286,146 @@ def health(request):
     }
     degraded = any(v != "ok" for v in checks.values())
     return Response({"status": "degraded" if degraded else "ok", "checks": checks, "crawl": crawl})
+
+
+class SimilarTenders(APIView):
+    @extend_schema(responses=TenderSerializer(many=True))
+    def get(self, request, pk: int):
+        tender = get_object_or_404(Tender, pk=pk)
+        ids: list[int] = []
+        if search.available():
+            try:
+                ids = [i for i in search.similar(tender) if i != tender.pk]
+            except Exception:
+                log.exception("similar-tenders query failed; falling back to postgres")
+        if ids:
+            by_id = Tender.objects.select_related("buyer_entity").in_bulk(ids)
+            rows = [by_id[i] for i in ids if i in by_id]
+        else:
+            # Same sector, same state first, then the same sector anywhere.
+            base = (
+                Tender.objects.select_related("buyer_entity")
+                .filter(sector=tender.sector, closes_at__gte=timezone.now())
+                .exclude(pk=tender.pk)
+            )
+            rows = list(base.filter(state=tender.state).order_by("closes_at")[:6])
+            if len(rows) < 6:
+                rows += list(
+                    base.exclude(pk__in=[r.pk for r in rows]).order_by("closes_at")[: 6 - len(rows)]
+                )
+        return Response(TenderSerializer(rows, many=True).data)
+
+
+SectorSchema = inline_serializer(
+    "SectorStat",
+    {
+        "slug": serializers.CharField(),
+        "label": serializers.CharField(),
+        "description": serializers.CharField(),
+        "open": serializers.IntegerField(),
+        "closing_this_week": serializers.IntegerField(),
+        "value_inr": serializers.DecimalField(max_digits=20, decimal_places=2, allow_null=True),
+    },
+    many=True,
+)
+
+
+class Sectors(APIView):
+    @extend_schema(responses=SectorSchema)
+    def get(self, request):
+        from tenders.sectors import SECTORS
+
+        now = timezone.now()
+        week = now + timedelta(days=7)
+        stats = {
+            r["sector"]: r
+            for r in Tender.objects.filter(closes_at__gte=now)
+            .values("sector")
+            .annotate(
+                open=Count("id"),
+                closing_this_week=Count("id", filter=Q(closes_at__lt=week)),
+                value_inr=Sum("value_inr"),
+            )
+        }
+        return Response(
+            [
+                {
+                    "slug": s.slug,
+                    "label": s.label,
+                    "description": s.description,
+                    "open": stats.get(s.slug, {}).get("open", 0),
+                    "closing_this_week": stats.get(s.slug, {}).get("closing_this_week", 0),
+                    "value_inr": stats.get(s.slug, {}).get("value_inr"),
+                }
+                for s in SECTORS
+            ]
+        )
+
+
+MapSchema = inline_serializer(
+    "StateStat",
+    {
+        "state": serializers.CharField(),
+        "open": serializers.IntegerField(),
+        "closing_this_week": serializers.IntegerField(),
+        "value_inr": serializers.DecimalField(max_digits=20, decimal_places=2, allow_null=True),
+        "top_sector": serializers.CharField(allow_null=True),
+    },
+    many=True,
+)
+
+
+class MapStats(APIView):
+    """Open tenders per state, for the India map. Optional ?sector= narrows it."""
+
+    @extend_schema(
+        parameters=[
+            inline_serializer("MapQuery", {"sector": serializers.CharField(required=False)})
+        ],
+        responses=MapSchema,
+    )
+    def get(self, request):
+        now = timezone.now()
+        week = now + timedelta(days=7)
+        qs = Tender.objects.filter(closes_at__gte=now).exclude(state="")
+        if request.query_params.get("sector"):
+            qs = qs.filter(sector=request.query_params["sector"])
+        rows = (
+            qs.values("state")
+            .annotate(
+                open=Count("id"),
+                closing_this_week=Count("id", filter=Q(closes_at__lt=week)),
+                value_inr=Sum("value_inr"),
+            )
+            .order_by("-open")
+        )
+        top: dict[str, str] = {}
+        for r in qs.values("state", "sector").annotate(n=Count("id")).order_by("state", "-n"):
+            top.setdefault(r["state"], r["sector"])
+        return Response([{**r, "top_sector": top.get(r["state"])} for r in rows])
+
+
+@extend_schema(
+    responses=inline_serializer(
+        "SiteConfig",
+        {
+            "google_client_id": serializers.CharField(),
+            "dev_login": serializers.BooleanField(),
+            "sources": serializers.ListField(child=serializers.DictField()),
+        },
+    )
+)
+@api_view(["GET"])
+def site_config(request):
+    """Public settings the frontend needs at runtime (no rebuild when they change)."""
+    from django.conf import settings
+
+    from ingest.sources import SOURCES
+
+    return Response(
+        {
+            "google_client_id": settings.GOOGLE_CLIENT_ID,
+            "dev_login": settings.DEV_LOGIN_ENABLED,
+            "sources": [{"key": s.key, "name": s.name} for s in SOURCES.values()],
+        }
+    )

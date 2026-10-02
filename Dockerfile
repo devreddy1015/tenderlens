@@ -7,7 +7,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 RUN DJANGO_SECRET_KEY=build python manage.py collectstatic --noinput >/dev/null \
-    && useradd --system --uid 1001 app && chown -R app /app
+    && useradd --system --create-home --uid 1001 app && chown -R app /app
 USER app
 EXPOSE 8000
 CMD ["/app/deploy/entrypoint.sh", "web"]

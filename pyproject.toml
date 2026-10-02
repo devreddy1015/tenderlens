@@ -19,6 +19,9 @@ dependencies = [
     "rapidfuzz>=3.12",
     "elasticsearch>=8.15,<9",
     "gunicorn>=23.0",
+    "google-auth>=2.38",
+    "requests>=2.32",
+    "whitenoise>=6.8",
 ]
 
 [dependency-groups]
@@ -36,6 +39,10 @@ package = false
 DJANGO_SETTINGS_MODULE = "config.settings"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+filterwarnings = [
+    # whitenoise warns when collectstatic has not run; irrelevant to tests
+    "ignore:No directory at:UserWarning",
+]
 markers = [
     "es: needs a running Elasticsearch (skipped when ES_URL is unreachable)",
 ]

@@ -70,6 +70,8 @@ INDEX_BODY = {
             "buyer_text": {"type": "text", "analyzer": "english"},
             "org_chain": {"type": "text"},
             "state": {"type": "keyword"},
+            "pincode": {"type": "keyword"},
+            "sector": {"type": "keyword"},
             "category": {"type": "keyword"},
             "product_category": {"type": "keyword"},
             "location": {"type": "text"},
@@ -117,6 +119,8 @@ def to_doc(t) -> dict:
         "buyer_text": f"{buyer} {t.buyer_raw}",
         "org_chain": t.org_chain,
         "state": t.state or None,
+        "pincode": t.pincode or None,
+        "sector": t.sector or None,
         "category": t.category or None,
         "product_category": t.product_category or None,
         "location": t.location,
@@ -142,6 +146,45 @@ def bulk_index(tenders) -> int:
     )
     ok, _ = helpers.bulk(client(), actions, chunk_size=500, refresh="wait_for")
     return ok
+
+
+def similar(tender, size: int = 6) -> list[int]:
+    """Open tenders like this one: similar title words *within the same sector*.
+
+    Without the sector filter, rare words like the buyer's name in the title ("FACT
+    Udyogamandal") dominate, and "similar" becomes "same buyer, any kind of work".
+    """
+    ids: list[int] = []
+    if tender.sector and tender.sector != "other":
+        ids = _similar(tender, size, [{"term": {"sector": tender.sector}}])
+    if len(ids) < size:
+        ids += [i for i in _similar(tender, size, []) if i not in ids][: size - len(ids)]
+    return ids
+
+
+def _similar(tender, size: int, extra_filters: list) -> list[int]:
+    resp = client().search(
+        index=settings.ES_INDEX,
+        size=size,
+        source=False,
+        query={
+            "bool": {
+                "must": [
+                    {
+                        "more_like_this": {
+                            "fields": ["title"],
+                            "like": [{"_index": settings.ES_INDEX, "_id": str(tender.id)}],
+                            "min_term_freq": 1,
+                            "min_doc_freq": 2,
+                            "max_query_terms": 20,
+                        }
+                    }
+                ],
+                "filter": [{"range": {"closes_at": {"gte": "now"}}}, *extra_filters],
+            }
+        },
+    )
+    return [int(h["_id"]) for h in resp["hits"]["hits"]]
 
 
 def text_query(q: str, *, relaxed: bool = False) -> dict:
@@ -186,31 +229,59 @@ def text_query(q: str, *, relaxed: bool = False) -> dict:
     }
 
 
-def build_query(params: dict, *, relaxed: bool = False) -> dict:
-    must, filters = [], []
-    q = (params.get("q") or "").strip()
-    if q:
-        must.append(text_query(q, relaxed=relaxed))
-    if params.get("state"):
-        filters.append({"term": {"state": params["state"]}})
-    if params.get("category"):
-        filters.append({"term": {"category": params["category"]}})
-    if params.get("buyer"):
-        filters.append({"term": {"buyer_id": int(params["buyer"])}})
-    if params.get("source"):
-        filters.append({"term": {"source": params["source"]}})
+FACET_FIELDS = ("state", "sector", "category", "value_range")
+
+
+def facet_filters(params: dict) -> dict[str, dict]:
+    """Filters that belong to a facet group, keyed by that group."""
+    out: dict[str, dict] = {}
+    for field in ("state", "sector", "category"):
+        if params.get(field):
+            out[field] = {"term": {field: params[field]}}
     rng = {}
     if params.get("min_value") is not None:
         rng["gte"] = float(params["min_value"])
     if params.get("max_value") is not None:
         rng["lte"] = float(params["max_value"])
     if rng:
-        filters.append({"range": {"value_inr": rng}})
+        out["value_range"] = {"range": {"value_inr": rng}}
+    return out
+
+
+def build_query(params: dict, *, relaxed: bool = False) -> dict:
+    """Text query plus the filters that are *not* facets. Facet filters go into
+    post_filter (see _search) so each facet can be counted without its own filter."""
+    must, filters = [], []
+    q = (params.get("q") or "").strip()
+    if q:
+        must.append(text_query(q, relaxed=relaxed))
+    if params.get("pin"):
+        filters.append({"prefix": {"pincode": params["pin"]}})
+    if params.get("buyer"):
+        filters.append({"term": {"buyer_id": int(params["buyer"])}})
+    if params.get("source"):
+        filters.append({"term": {"source": params["source"]}})
     if params.get("closes_before"):
         filters.append({"range": {"closes_at": {"lte": params["closes_before"]}}})
     if params.get("closes_after"):
         filters.append({"range": {"closes_at": {"gte": params["closes_after"]}}})
     return {"bool": {"must": must or [{"match_all": {}}], "filter": filters}}
+
+
+def _facet_aggs(ff: dict[str, dict]) -> dict:
+    """Disjunctive facets: each group is counted with every *other* group's filter
+    applied, so after picking "Roads" the sector list still shows the other sectors."""
+    inner = {
+        "state": {"terms": {"field": "state", "size": 40}},
+        "sector": {"terms": {"field": "sector", "size": 20}},
+        "category": {"terms": {"field": "category", "size": 20}},
+        "value_range": {"range": {"field": "value_inr", "ranges": VALUE_RANGES}},
+    }
+    aggs = {}
+    for name, agg in inner.items():
+        others = [f for k, f in ff.items() if k != name]
+        aggs[name] = {"filter": {"bool": {"filter": others}}, "aggs": {"b": agg}}
+    return aggs
 
 
 def search(params: dict, *, page: int = 1, page_size: int = 20) -> dict:
@@ -223,20 +294,26 @@ def search(params: dict, *, page: int = 1, page_size: int = 20) -> dict:
 
 
 def _search(params: dict, page: int, page_size: int, *, relaxed: bool) -> dict:
-    sort = [{"_score": "desc"}, {"closes_at": "asc"}] if params.get("q") else [{"closes_at": "asc"}]
+    sort_by = params.get("sort") or "relevance"
+    if sort_by == "newest":
+        sort = [{"published_at": "desc"}]
+    elif sort_by == "value":
+        sort = [{"value_inr": {"order": "desc", "missing": "_last"}}, {"closes_at": "asc"}]
+    elif sort_by == "closing" or not params.get("q"):
+        sort = [{"closes_at": "asc"}]
+    else:
+        sort = [{"_score": "desc"}, {"closes_at": "asc"}]
+    ff = facet_filters(params)
     resp = client().search(
         index=settings.ES_INDEX,
         query=build_query(params, relaxed=relaxed),
+        post_filter={"bool": {"filter": list(ff.values())}},
         from_=(page - 1) * page_size,
         size=page_size,
         sort=sort,
         track_total_hits=True,
         source=False,
-        aggs={
-            "state": {"terms": {"field": "state", "size": 40}},
-            "category": {"terms": {"field": "category", "size": 20}},
-            "value_range": {"range": {"field": "value_inr", "ranges": VALUE_RANGES}},
-        },
+        aggs=_facet_aggs(ff),
     )
     aggs = resp["aggregations"]
     return {
@@ -244,12 +321,7 @@ def _search(params: dict, page: int, page_size: int, *, relaxed: bool) -> dict:
         "ids": [int(h["_id"]) for h in resp["hits"]["hits"]],
         "relaxed": False,
         "facets": {
-            "state": [{"key": b["key"], "count": b["doc_count"]} for b in aggs["state"]["buckets"]],
-            "category": [
-                {"key": b["key"], "count": b["doc_count"]} for b in aggs["category"]["buckets"]
-            ],
-            "value_range": [
-                {"key": b["key"], "count": b["doc_count"]} for b in aggs["value_range"]["buckets"]
-            ],
+            name: [{"key": b["key"], "count": b["doc_count"]} for b in aggs[name]["b"]["buckets"]]
+            for name in FACET_FIELDS
         },
     }

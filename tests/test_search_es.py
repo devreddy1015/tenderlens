@@ -109,3 +109,21 @@ def test_relaxed_fallback_when_no_title_has_every_word(es_index):
     assert strict["relaxed"] is True
     assert strict["total"] >= 1
     assert search.search({"q": "toilet"})["relaxed"] is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_facets_are_disjunctive_in_elasticsearch(es_index):
+    res = search.search({"sector": "roads"})
+    sectors = {b["key"]: b["count"] for b in res["facets"]["sector"]}
+    assert len(sectors) > 1
+    assert sectors["roads"] == res["total"] == Tender.objects.filter(sector="roads").count()
+    states = {b["key"]: b["count"] for b in res["facets"]["state"]}
+    assert sum(states.values()) == Tender.objects.filter(sector="roads").exclude(state="").count()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_similar_prefers_same_sector(es_index):
+    t = Tender.objects.get(source_tender_id="2026_DDA_928692_1")
+    ids = search.similar(t)
+    same = [i for i in ids if Tender.objects.get(pk=i).sector == t.sector]
+    assert ids and same[: len(same)] == ids[: len(same)]  # same-sector results come first

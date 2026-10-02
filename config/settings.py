@@ -22,7 +22,11 @@ ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,web").split(","
 CSRF_TRUSTED_ORIGINS = [o for o in env("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o]
 
 INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
     "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
     "django_filters",
@@ -30,11 +34,20 @@ INSTALLED_APPS = [
     "ingest",
     "tenders",
     "api",
+    "accounts",
+    "alerts",
+    "feedback",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -45,7 +58,13 @@ TEMPLATES = [
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [],
         "APP_DIRS": True,
-        "OPTIONS": {"context_processors": ["django.template.context_processors.request"]},
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ]
+        },
     }
 ]
 
@@ -69,17 +88,70 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
+# --- Sessions, CSRF, sign-in -----------------------------------------------------
+# The React app and the API share one origin behind nginx, so plain session cookies
+# work: SameSite=Lax blocks cross-site POSTs, and the CSRF token covers same-site ones.
+SECURE_COOKIES = env_bool("SECURE_COOKIES", False)  # true in production (HTTPS)
+SESSION_COOKIE_SECURE = SECURE_COOKIES
+CSRF_COOKIE_SECURE = SECURE_COOKIES
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 30
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Google sign-in: create an OAuth client ID ("Web application") in Google Cloud Console
+# and add your site to "Authorized JavaScript origins". Empty disables the button.
+GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", "")
+# Local development without Google: sign in with any email. Never true in production;
+# it is ignored unless DEBUG is also true.
+DEV_LOGIN_ENABLED = DEBUG and env_bool("DEV_LOGIN_ENABLED", False)
+
+# --- Email (tender alerts, feedback notifications) -----------------------------------
+# Development: Mailpit (in docker-compose) catches every email at http://localhost:8025.
+# Production: any SMTP provider, e.g. Gmail with an App Password:
+#   EMAIL_HOST=smtp.gmail.com EMAIL_PORT=587 EMAIL_USE_TLS=true
+#   EMAIL_HOST_USER=you@gmail.com EMAIL_HOST_PASSWORD=<16-char app password>
+EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(env("EMAIL_PORT", "1025"))
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", False)
+EMAIL_TIMEOUT = 20
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "TenderLens <alerts@tenderlens.local>")
+# Where feedback is forwarded (empty: stored in the database only).
+FEEDBACK_NOTIFY_EMAIL = env("FEEDBACK_NOTIFY_EMAIL", "")
+# Absolute URL of the site, used for links inside emails.
+SITE_URL = env("SITE_URL", "http://localhost:8080").rstrip("/")
+# The site's own origin is always trusted for CSRF (it matters behind TLS-terminating
+# proxies, where the scheme Django sees can differ from the browser's).
+if SITE_URL not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append(SITE_URL)
 
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
-    "DEFAULT_PERMISSION_CLASSES": [],
-    "UNAUTHENTICATED_USER": None,
-    "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
-    "DEFAULT_THROTTLE_RATES": {"anon": env("API_RATE_LIMIT", "120/min")},
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": env("API_RATE_LIMIT", "120/min"),
+        "user": env("API_RATE_LIMIT_USER", "240/min"),
+        "feedback": "10/hour",
+        "auth": "30/hour",
+        "alert_test": "10/hour",
+    },
 }
 
 SPECTACULAR_SETTINGS = {
@@ -91,10 +163,12 @@ SPECTACULAR_SETTINGS = {
 
 REDIS_URL = env("REDIS_URL", "redis://localhost:6379/0")
 
+# Cache (API throttle counters) in its own Redis database, never the Celery broker's:
+# a cache flush must not be able to delete queued tasks.
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": REDIS_URL,
+        "LOCATION": env("REDIS_CACHE_URL", REDIS_URL.rsplit("/", 1)[0] + "/1"),
     }
 }
 
@@ -138,6 +212,11 @@ CELERY_BEAT_SCHEDULE = {
     "close-stale-runs": {
         "task": "ingest.tasks.close_stale_runs",
         "schedule": crontab(minute="*/15"),
+    },
+    # Alerts are also sent when each crawl run finishes; this catches anything missed.
+    "send-tender-alerts": {
+        "task": "alerts.tasks.send_alerts",
+        "schedule": crontab(minute=50),
     },
     "prune-raw-listing-pages": {
         "task": "ingest.tasks.prune_raw_pages",

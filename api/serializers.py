@@ -24,6 +24,7 @@ class TenderSerializer(serializers.ModelSerializer):
             "buyer_raw",
             "category",
             "product_category",
+            "sector",
             "value_inr",
             "emd_inr",
             "published_at",
@@ -50,6 +51,10 @@ class TenderDetailSerializer(TenderSerializer):
 class TenderQuerySerializer(serializers.Serializer):
     q = serializers.CharField(required=False, allow_blank=True, max_length=200)
     state = serializers.CharField(required=False, max_length=64)
+    sector = serializers.CharField(required=False, max_length=32)
+    pin = serializers.RegexField(
+        r"^[1-9]\d{1,5}$", required=False, help_text="PIN code prefix, e.g. 490 for Bhilai/Durg"
+    )
     category = serializers.CharField(required=False, max_length=64)
     source = serializers.CharField(required=False, max_length=32)
     buyer = serializers.IntegerField(required=False, min_value=1, help_text="buyer entity id")
@@ -61,6 +66,9 @@ class TenderQuerySerializer(serializers.Serializer):
     )
     closes_before = serializers.DateTimeField(required=False)
     closes_after = serializers.DateTimeField(required=False)
+    sort = serializers.ChoiceField(
+        choices=["relevance", "closing", "newest", "value"], required=False, default="relevance"
+    )
     page = serializers.IntegerField(required=False, min_value=1, default=1)
     page_size = serializers.IntegerField(required=False, min_value=1, max_value=100, default=20)
 
@@ -72,6 +80,7 @@ class FacetBucketSerializer(serializers.Serializer):
 
 class FacetsSerializer(serializers.Serializer):
     state = FacetBucketSerializer(many=True)
+    sector = FacetBucketSerializer(many=True)
     category = FacetBucketSerializer(many=True)
     value_range = FacetBucketSerializer(many=True)
 

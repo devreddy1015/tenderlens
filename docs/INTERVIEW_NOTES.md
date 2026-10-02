@@ -122,6 +122,11 @@ the web container, it had a new IP and nginx kept sending traffic to the old one
 Fix: Docker's DNS resolver plus `server web:8000 resolve` in a shared-memory upstream zone
 (nginx ≥ 1.27.3). Verified by force-recreating web while nginx kept running.
 
+Second one, found by the end-to-end browser test: nginx forwarded `Host: localhost` without
+the port, so Django's CSRF origin check compared `http://localhost:8080` (the browser's
+`Origin`) with `http://localhost` and refused every sign-in POST. Unit tests can't see this;
+they don't go through nginx. Fix: `proxy_set_header Host $http_host`.
+
 ## "How did you use AI tools, and how did you verify the output?"
 
 Answer this honestly in your own words. Things you can point to: every behaviour above

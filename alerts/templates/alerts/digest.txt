@@ -1,0 +1,19 @@
+{% autoescape off %}{% if test %}This is a test of your TenderLens alert.{% elif first %}Your alert is set up. These tenders are open right now:{% else %}New tenders matching your alert:{% endif %}
+
+Alert: {{ sub.name }}
+Area: {{ area }}{% if sectors %}
+Sectors: {{ sectors|join:", " }}{% endif %}{% if sub.keywords %}
+Keywords: {{ sub.keywords }}{% endif %}
+
+{% for r in rows %}{{ forloop.counter }}. {{ r.title }}
+   {{ r.buyer }}{% if r.where %} · {{ r.where }}{% endif %}
+   Value: {{ r.value }} · Closes {{ r.closes }} ({{ r.closes_in }})
+   {{ r.url }}
+
+{% endfor %}{% if more %}…and {{ more }} more: {{ search_url }}
+{% endif %}
+Manage your alerts: {{ manage_url }}
+Unsubscribe from this alert: {{ unsubscribe_url }}
+
+Always confirm details on the official portal before bidding.
+{% endautoescape %}

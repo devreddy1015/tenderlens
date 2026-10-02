@@ -66,6 +66,9 @@ class Tender(models.Model):
     category = models.CharField(max_length=64, blank=True, default="")
     product_category = models.CharField(max_length=128, blank=True, default="")
     tender_type = models.CharField(max_length=64, blank=True, default="")
+    # Derived by tenders.sectors.classify; not part of content_hash (re-run with
+    # `manage.py classify_sectors` when the rules change).
+    sector = models.CharField(max_length=32, blank=True, default="", db_index=True)
     value_inr = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     emd_inr = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     fee_inr = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)

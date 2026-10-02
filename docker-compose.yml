@@ -7,6 +7,8 @@ x-app: &app
     POSTGRES_HOST: postgres
     REDIS_URL: redis://redis:6379/0
     ES_URL: http://elasticsearch:9200
+    EMAIL_HOST: ${EMAIL_HOST:-mailpit}
+    EMAIL_PORT: ${EMAIL_PORT:-1025}
   depends_on:
     postgres: { condition: service_healthy }
     redis: { condition: service_healthy }
@@ -51,6 +53,13 @@ services:
       test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
       interval: 10s
       retries: 30
+    restart: unless-stopped
+
+  # Catches every email in development: http://localhost:8025. In production set
+  # EMAIL_HOST/EMAIL_PORT/EMAIL_HOST_USER/EMAIL_HOST_PASSWORD/EMAIL_USE_TLS in .env.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ["127.0.0.1:8025:8025"]
     restart: unless-stopped
 
   web:

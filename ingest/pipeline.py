@@ -237,6 +237,10 @@ def maybe_finalize(run_id: int, *, force: bool = False) -> CrawlRun | None:
             run.status = CrawlRun.Status.SUCCEEDED
         run.finished = timezone.now()
         run.save()
+        if run.new:
+            from alerts.tasks import send_alerts
+
+            transaction.on_commit(send_alerts.delay)
     if problems:
         log.warning("crawl run %s reconciliation: %s", run_id, "; ".join(problems))
     log.info(

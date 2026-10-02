@@ -9,3 +9,4 @@ frontend/dist/
 .ruff_cache/
 backups/
 frontend/*.tsbuildinfo
+scripts/.cache/

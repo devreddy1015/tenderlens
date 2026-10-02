@@ -28,12 +28,45 @@ python3 -c "import secrets; print('DJANGO_SECRET_KEY=' + secrets.token_urlsafe(5
 #   HTTP_PORT=80            # or keep 8080 behind an existing reverse proxy
 ```
 
+### Google sign-in (for email alerts)
+
+1. Open https://console.cloud.google.com/apis/credentials and create a project.
+2. **OAuth consent screen**: External, app name "TenderLens", your email; scopes
+   `openid`, `email`, `profile` only. Publish it.
+3. **Create credentials → OAuth client ID → Web application.** Under *Authorized
+   JavaScript origins*, add `https://tenderlens.example.in` (and `http://localhost:8080`
+   for local testing). No redirect URI is needed; the button uses a popup.
+4. Put the client ID (`…apps.googleusercontent.com`) in `.env` as `GOOGLE_CLIENT_ID`.
+   It is public by design; there is no client secret to keep.
+
+### Email (alerts and feedback)
+
+Any SMTP provider works. With a Gmail account, turn on 2-Step Verification, create an
+**App Password** at https://myaccount.google.com/apppasswords, then in `.env`:
+
+```
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=true
+EMAIL_HOST_USER=you@gmail.com
+EMAIL_HOST_PASSWORD=<the 16-character app password>
+DEFAULT_FROM_EMAIL=TenderLens <you@gmail.com>
+FEEDBACK_NOTIFY_EMAIL=you@gmail.com
+SITE_URL=https://tenderlens.example.in
+SECURE_COOKIES=true
+```
+
+Gmail allows roughly 500 messages a day. For more, use a transactional provider (Brevo,
+Amazon SES, Postmark) and add SPF/DKIM records for your domain so alerts aren't marked
+as spam. Leave `DJANGO_DEBUG` and `DEV_LOGIN_ENABLED` unset in production.
+
 ## 3. Start
 
 ```bash
 make up                      # builds images, waits until every health check passes
 curl -s localhost:${HTTP_PORT:-8080}/health | python3 -m json.tool
 make crawl MODE=full         # first full crawl; afterwards Celery Beat runs hourly + nightly
+make admin                   # admin user for /admin/ (feedback, alerts, crawl runs)
 ```
 
 HTTPS: put the server behind Cloudflare, or add certbot on the host and proxy to the

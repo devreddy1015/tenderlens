@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/* Dark mode follows the .dark class on <html> (set by the theme toggle). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic tokens: components use bg-surface / text-ink / border-line, and both themes
+   swap here in one place. Map ramp steps come from the dataviz reference palette. */
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --line: #e3e6eb;
+  --ink: #0f1729;
+  --ink-2: #4a5468;
+  --ink-3: #7b8496;
+  --brand: #1c5cab;
+  --brand-ink: #ffffff;
+  --brand-soft: #e8f1fd;
+  --critical: #c22f2f;
+  --good: #0a7d0a;
+  --map-empty: #eceef2;
+  --map-1: #cde2fb;
+  --map-2: #9ec5f4;
+  --map-3: #6da7ec;
+  --map-4: #3987e5;
+  --map-5: #256abf;
+  --map-6: #184f95;
+  --map-7: #0d366b;
+  --map-stroke: #ffffff;
+}
+.dark {
+  color-scheme: dark;
+  --bg: #0b0e14;
+  --surface: #131821;
+  --surface-2: #1a202b;
+  --line: #262d3a;
+  --ink: #f2f4f8;
+  --ink-2: #b4bccb;
+  --ink-3: #828ba0;
+  --brand: #5598e7;
+  --brand-ink: #071d39;
+  --brand-soft: #12243d;
+  --critical: #f07171;
+  --good: #3ec43e;
+  --map-empty: #1d232e;
+  /* Dark surface: low values recede toward the surface, high values brighten. */
+  --map-1: #12355f;
+  --map-2: #184f95;
+  --map-3: #1c5cab;
+  --map-4: #2a78d6;
+  --map-5: #5598e7;
+  --map-6: #86b6ef;
+  --map-7: #cde2fb;
+  --map-stroke: #0b0e14;
+}
+
+@theme inline {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-critical: var(--critical);
+  --color-good: var(--good);
+}
+
+html {
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+body {
+  min-height: 100vh;
+}
+::selection {
+  background: color-mix(in srgb, var(--brand) 30%, transparent);
+}
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.hero-glow {
+  background:
+    radial-gradient(60% 80% at 15% 0%, color-mix(in srgb, var(--brand) 18%, transparent) 0%, transparent 60%),
+    radial-gradient(50% 70% at 90% 10%, color-mix(in srgb, #7c5cff 14%, transparent) 0%, transparent 60%);
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 37%, var(--surface-2) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  * { scroll-behavior: auto !important; transition: none !important; }
+}

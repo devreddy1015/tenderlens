@@ -3,7 +3,7 @@ SOURCE ?= central
 MODE ?= incremental
 MANAGE = $(COMPOSE) exec web python manage.py
 
-.PHONY: up down logs ps test lint fmt crawl crawl-sync backfill migrate er-eval reindex frontend backup
+.PHONY: up down logs ps test lint fmt crawl crawl-sync backfill migrate er-eval reindex frontend backup admin
 
 up:            ## build and start the whole stack (postgres, redis, elasticsearch, web, worker, beat, nginx)
 	@test -f .env || cp .env.example .env
@@ -49,3 +49,6 @@ reindex:
 
 backup:
 	./deploy/backup.sh
+
+admin:         ## create a Django admin user
+	$(MANAGE) createsuperuser
