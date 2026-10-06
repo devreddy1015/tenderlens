@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bell, LogOut, Menu, MessageSquareText, Monitor, Moon, Search, Sun, X } from "lucide-react";
+import { Bell, Building2, Globe, KanbanSquare, LogOut, Menu, MessageSquareText, Monitor, Moon, Search, Sun, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { ApiError, api } from "../lib/api";
@@ -15,8 +15,18 @@ const NAV = [
   { to: "/tenders", label: "Explore" },
   { to: "/map", label: "Map" },
   { to: "/sectors", label: "Sectors" },
+  { to: "/pipeline", label: "Pipeline" },
+  { to: "/copilot", label: "Copilot" },
   { to: "/alerts", label: "Alerts" },
-  { to: "/private", label: "Private", soon: true },
+  { to: "/pricing", label: "Pricing" },
+];
+
+/** Signed-in account menu: organisation-level pages that don't earn a top-level slot. */
+const ACCOUNT_LINKS = [
+  { to: "/workspace", label: "Workspace", icon: Building2 },
+  { to: "/pipeline", label: "Bid pipeline", icon: KanbanSquare },
+  { to: "/alerts", label: "My alerts", icon: Bell },
+  { to: "/coverage", label: "Coverage", icon: Globe },
 ];
 
 export { Logo };
@@ -120,9 +130,11 @@ function UserMenu() {
             <p className="num truncate text-xs text-ink-3">{u.email}</p>
           </div>
           <div className="pt-1">
-            <Link to="/alerts" onClick={() => setOpen(false)} className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink">
-              <Bell className="size-4" /> My alerts
-            </Link>
+            {ACCOUNT_LINKS.map(({ to, label, icon: Icon }) => (
+              <Link key={to} to={to} onClick={() => setOpen(false)} className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink">
+                <Icon className="size-4" /> {label}
+              </Link>
+            ))}
             <button
               onClick={() => (setOpen(false), signOut())}
               className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink"
@@ -156,7 +168,6 @@ function NavItems({ onNavigate, vertical }: { onNavigate?: () => void; vertical?
           }
         >
           {n.label}
-          {n.soon && <span className="label rounded-[3px] border border-line px-1 py-px text-[9px] tracking-[0.1em]">Soon</span>}
         </NavLink>
       ))}
     </>
@@ -329,22 +340,25 @@ function Footer({ onFeedback }: { onFeedback: () => void }) {
           <li><Link to="/tenders">Explore tenders</Link></li>
           <li><Link to="/map">Tender map</Link></li>
           <li><Link to="/sectors">Sectors</Link></li>
+          <li><Link to="/pipeline">Bid pipeline</Link></li>
+          <li><Link to="/copilot">Document copilot</Link></li>
           <li><Link to="/alerts">Email alerts</Link></li>
+          <li><Link to="/pricing">Pricing</Link></li>
         </FooterLinks>
         <FooterLinks title="Sources">
           <li><a href="https://eprocure.gov.in/eprocure/app" target="_blank" rel="noreferrer">CPPP portal ↗</a></li>
           <li><a href="https://mptenders.gov.in/nicgep/app" target="_blank" rel="noreferrer">MP e-tenders ↗</a></li>
+          <li><Link to="/coverage">Coverage &amp; sources</Link></li>
           <li><a href="/api/docs/">API documentation</a></li>
         </FooterLinks>
         <FooterLinks title="Support">
           <li><button onClick={onFeedback}>Report a bug</button></li>
           <li><button onClick={onFeedback}>Suggest a feature</button></li>
-          <li><Link to="/private">Private tenders <span className="text-signal-text">· soon</span></Link></li>
         </FooterLinks>
       </div>
       <div className="border-t border-line">
         <div className="mx-auto flex max-w-7xl flex-wrap justify-between gap-x-6 gap-y-2 px-4 pt-4 pb-16 text-xs text-ink-3 sm:px-6 md:pr-36 md:pb-4">
-          <p>Tender data: NIC GePNIC public listings. {MAP_ATTRIBUTION}.</p>
+          <p>Tender data: public listings on CPPP and NIC GePNIC portals; every tender links to its source. {MAP_ATTRIBUTION}.</p>
           <p>Always confirm details on the official portal before bidding.</p>
         </div>
       </div>

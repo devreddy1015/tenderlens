@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, ArrowUpRight, Search } from "lucide-react";
+import { ArrowRight, ArrowUpRight, KanbanSquare, ScanText, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { IndiaMap } from "../components/IndiaMap";
@@ -7,9 +7,11 @@ import { InterfaceLines } from "../components/InterfaceLines";
 import { StatePanel, TopStates } from "../components/StatePanel";
 import { TenderListHeader, TenderRow, TenderRowSkeleton } from "../components/TenderCard";
 import { Button, ButtonLink, cx, SectionHeading, Skeleton, Stat, Tag } from "../components/ui";
-import { type AlertCriteria, api, DEFAULT_FILTERS, type SectorStat } from "../lib/api";
+import { type AlertCriteria, api, DEFAULT_FILTERS, type SectorStat, type Source } from "../lib/api";
 import { formatCount, formatInr, timeAgo } from "../lib/format";
+import { useSources } from "../lib/queries";
 import { SectorIcon, sectorMeta } from "../lib/sectors";
+import { latestRun } from "../lib/sources";
 
 const QUICK = ["roads", "buildings", "electrical", "it", "security", "health"];
 
@@ -36,6 +38,38 @@ function Section({ children, rule = true, className }: { children: ReactNode; ru
 
 // --- Hero ------------------------------------------------------------------------------
 
+/** "Source · CPPP, MP e-tenders +3": attribution from the live source list, never hard-coded. */
+function sourceLine(sources: Source[] | undefined): string {
+  const live = (sources ?? []).filter((s) => s.enabled);
+  if (live.length === 0) return "Source · official portals";
+  const names = live.slice(0, 2).map((s) => s.name).join(", ");
+  return `Source · ${names}${live.length > 2 ? ` +${live.length - 2}` : ""}`;
+}
+
+/** The hero's proof line. Every figure comes from /api/stats or /api/sources; while they load
+ *  (or if they fail) the line is simply absent rather than showing a made-up number. */
+function LiveProof() {
+  const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats });
+  const sources = useSources();
+  const portals = sources.data?.filter((s) => s.enabled).length;
+  const crawled = latestRun(sources.data) ?? stats.data?.last_crawl?.finished;
+  const parts = [
+    stats.data && `${formatCount(stats.data.open_tenders)} open tenders`,
+    portals ? `${formatCount(portals)} ${portals === 1 ? "portal" : "portals"} indexed` : null,
+    crawled && `updated ${timeAgo(crawled)}`,
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
+  return (
+    <p className="num mt-5 inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-2">
+      <span className="live-dot" aria-hidden="true" />
+      {parts.join(" · ")}
+      <Link to="/coverage" className="text-ink-3 underline decoration-line-strong underline-offset-4 hover:text-ink">
+        sources
+      </Link>
+    </p>
+  );
+}
+
 function Hero() {
   const nav = useNavigate();
   const [q, setQ] = useState("");
@@ -45,14 +79,16 @@ function Hero() {
       <InterfaceLines className="field-mask-hero [--calm-h:52%] [--calm-w:44%] [--calm-x:27%] [--calm-y:50%]" />
       <div className="relative mx-auto grid max-w-7xl grid-cols-1 gap-12 px-4 pt-16 pb-16 sm:px-6 sm:pt-24 sm:pb-24 lg:grid-cols-[1.3fr_1fr] lg:items-center lg:gap-16">
         <div>
-          <p className="eyebrow">Public procurement index · India</p>
+          <p className="eyebrow">Tender intelligence for Indian bidders</p>
           <h1 className="mt-6 text-[2.5rem] leading-[1.04] font-semibold tracking-[-0.035em] sm:text-6xl lg:text-[3.6rem]">
-            <span className="block text-ink">Every open government tender in India.</span>
-            <span className="block text-ink-3">Found before it closes.</span>
+            <span className="block text-ink">Every Indian government tender,</span>
+            <span className="block text-ink-3">read in minutes, bid with confidence.</span>
           </h1>
           <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-ink-2">
-            One search across central ministries, PSUs and state portals, mapped by state and PIN area, with an email the hour something new opens.
+            Find work across central ministries, PSUs and state portals. Upload the documents and get the EMD, dates and eligibility with page
+            citations. Track every bid with your team until it is won.
           </p>
+          <LiveProof />
 
           <form
             role="search"
@@ -98,6 +134,7 @@ function Hero() {
 function Feed() {
   const q = useQuery({ queryKey: ["newest"], queryFn: () => api.tenders({ ...DEFAULT_FILTERS, sort: "newest" }) });
   const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats });
+  const sources = useSources();
   return (
     <aside className="panel ticks hidden bg-surface/90 backdrop-blur-sm lg:block" aria-label="Newly published tenders">
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
@@ -142,7 +179,7 @@ function Feed() {
             ))}
       </ol>
       <div className="label flex justify-between border-t border-line px-4 py-2.5 text-[10px]">
-        <span>Source · CPPP, MP e-tenders</span>
+        <span>{sourceLine(sources.data)}</span>
         <span>Crawled {stats.data ? timeAgo(stats.data.last_crawl?.finished) : "…"}</span>
       </div>
     </aside>
@@ -411,6 +448,91 @@ function AlertsCta() {
 
 // --- 04 Coverage -----------------------------------------------------------------------
 
+/** The portals in the index with their live open-tender counts, straight from /api/sources. */
+function SourceList() {
+  const sources = useSources();
+  const rows = (sources.data ?? []).filter((s) => s.enabled).sort((a, b) => b.open_tenders - a.open_tenders);
+  return (
+    <div className="bg-surface p-6 sm:p-8">
+      <p className="label">Portals indexed</p>
+      {sources.isLoading ? (
+        <div className="mt-5 space-y-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-4 w-full" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="mt-5 text-sm text-ink-3">The source list is unavailable right now.</p>
+      ) : (
+        <ul className="mt-4 divide-y divide-line">
+          {rows.slice(0, 5).map((s) => (
+            <li key={s.key} className="flex items-baseline justify-between gap-4 py-2.5 text-sm">
+              <a href={s.url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-ink-2 hover:text-ink">
+                {s.name} <span aria-hidden="true">↗</span>
+              </a>
+              <span className="num shrink-0 text-ink">{formatCount(s.open_tenders)} open</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link to="/coverage" className={cx(textLink, "mt-6")}>
+        {rows.length > 5 ? `All ${formatCount(rows.length)} portals` : "Coverage and attribution"} <ArrowRight className="size-3.5" aria-hidden="true" />
+      </Link>
+    </div>
+  );
+}
+
+// --- Product: find, understand, manage -------------------------------------------------
+
+const PILLARS = [
+  {
+    icon: Search,
+    title: "Find",
+    body: "One search and one map across central and state portals, with email alerts the hour something new opens.",
+    to: "/tenders",
+    cta: "Explore tenders",
+  },
+  {
+    icon: ScanText,
+    title: "Understand",
+    body: "Upload the NIT and BOQ. Get the bid brief, an eligibility check against your company profile, and answers with page citations.",
+    to: "/copilot",
+    cta: "Open the Copilot",
+  },
+  {
+    icon: KanbanSquare,
+    title: "Manage",
+    body: "Track bids from watching to won with your team, see what closes this week, and export to CSV or OCDS.",
+    to: "/pipeline",
+    cta: "See the pipeline",
+  },
+];
+
+function Product() {
+  return (
+    <Section rule={false}>
+      <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-3">
+        {PILLARS.map(({ icon: Icon, title, body, to, cta }) => (
+          <div key={title} className="bg-surface p-6 sm:p-7">
+            <Icon className="size-5 text-signal-text" aria-hidden="true" />
+            <h3 className="mt-4 text-lg font-semibold text-ink">{title}</h3>
+            <p className="mt-2 text-sm leading-relaxed text-ink-2">{body}</p>
+            <Link to={to} className={cx(textLink, "mt-5")}>
+              {cta} <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
+          </div>
+        ))}
+      </div>
+      <p className="mt-4 text-sm text-ink-3">
+        Free to search and set alerts.{" "}
+        <Link to="/pricing" className="text-ink-2 underline decoration-line-strong underline-offset-4 hover:text-ink">
+          Plans for teams
+        </Link>
+      </p>
+    </Section>
+  );
+}
+
 function Coverage() {
   return (
     <Section className="[&>div]:pb-0">
@@ -426,16 +548,11 @@ function Coverage() {
             Explore government tenders <ArrowRight className="size-3.5" aria-hidden="true" />
           </Link>
         </div>
-        <div className="bg-surface p-6 sm:p-8">
-          <Tag tone="signal">Coming soon</Tag>
-          <h3 className="mt-5 text-xl font-semibold text-ink">Private tenders</h3>
-          <p className="mt-2 max-w-md text-ink-2">RFQs and RFPs from private companies, in the same search and the same alerts.</p>
-          <Link to="/private" className={cx(textLink, "mt-6")}>
-            Join the waitlist <ArrowRight className="size-3.5" aria-hidden="true" />
-          </Link>
-        </div>
+        <SourceList />
       </div>
-      <p className="num mt-4 text-xs text-ink-3">Crawled hourly from public pages · one request per second · always confirm on the official portal</p>
+      <p className="num mt-4 text-xs text-ink-3">
+        Crawled from public pages · one request per second · documents stay on the portal · always confirm on the official portal
+      </p>
     </Section>
   );
 }
@@ -445,6 +562,7 @@ export default function Home() {
     <>
       <Hero />
       <Readout />
+      <Product />
       <MapSection />
       <SectorsSection />
       <ClosingSoon />
