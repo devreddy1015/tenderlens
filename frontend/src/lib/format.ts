@@ -15,6 +15,21 @@ function trim(x: number, short: boolean): string {
   return x.toLocaleString("en-IN", { maximumFractionDigits: short && x >= 100 ? 0 : 2 });
 }
 
+/** Exact rupees with Indian digit grouping (₹1,19,880), for prices and amounts people type,
+ *  where "₹1.2 lakh" would hide the real number. */
+export function formatRupees(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toLocaleString("en-IN", { maximumFractionDigits: 1 })} MB`;
+}
+
 export function formatCount(n: number | null | undefined): string {
   return (n ?? 0).toLocaleString("en-IN");
 }
@@ -37,6 +52,18 @@ export function closesIn(iso: string, now: Date = new Date()): { text: string; u
   if (hours < 24) return { text: hours < 1 ? "Closes within an hour" : `Closes in ${hours}h`, urgent: true, closed: false };
   const days = Math.floor(hours / 24);
   return { text: `Closes in ${days} day${days === 1 ? "" : "s"}`, urgent: days <= 3, closed: false };
+}
+
+/** Time left as a compact readout for tables: "16d 04h", "5h 12m", "Closed". */
+export function countdown(iso: string, now: Date = new Date()): { text: string; urgent: boolean; closed: boolean } {
+  const ms = new Date(iso).getTime() - now.getTime();
+  if (ms < 0) return { text: "Closed", urgent: false, closed: true };
+  const mins = Math.floor(ms / 60_000);
+  const days = Math.floor(mins / 1440);
+  const hours = Math.floor((mins % 1440) / 60);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const text = days > 0 ? `${days}d ${pad(hours)}h` : mins < 1 ? "< 1m" : `${hours}h ${pad(mins % 60)}m`;
+  return { text, urgent: days <= 3, closed: false }; // same rule as closesIn
 }
 
 export function timeAgo(iso: string | null | undefined, now: Date = new Date()): string {

@@ -1,16 +1,17 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellRing, Mail, MapPin, Pencil, Plus, Send, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { BellRing, MapPin, Pencil, Plus, Send, Trash2 } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import indiaData from "../data/india-states.json";
-import { Button, Card, cx, EmptyState, Field, inputClass, Skeleton } from "../components/ui";
+import { Chip, MultiPicker, SectorToggles } from "../components/MultiPicker";
+import { Button, Card, cx, EmptyState, Field, inputClass, PageHeader, Skeleton, Switch } from "../components/ui";
 import { type Alert, type AlertCriteria, ApiError, api } from "../lib/api";
 import { GoogleButton, useAuth } from "../lib/auth";
 import { formatCount, formatDate, formatInr } from "../lib/format";
+import { useDebounced } from "../lib/hooks";
 import { SECTORS, SectorIcon, sectorMeta } from "../lib/sectors";
+import { INDIAN_STATES } from "../lib/states";
 import { useToast } from "../lib/toast";
 
-const ALL_STATES = (indiaData as { states: { name: string }[] }).states.map((s) => s.name).sort();
 const PIN_SHORTCUTS = [
   { pin: "490", label: "Bhilai / Durg" },
   { pin: "492", label: "Raipur" },
@@ -34,68 +35,20 @@ function suggestName(d: Draft): string {
   return [what.slice(0, 2).join(", ") || "Tenders", where.length ? `in ${where.slice(0, 2).join(", ")}` : "across India"].join(" ");
 }
 
-function useDebounced<T>(value: T, ms: number): T {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return v;
-}
-
-function StatePicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
-  const options = ALL_STATES.filter((s) => !value.includes(s) && s.toLowerCase().includes(q.toLowerCase()));
+/** One numbered step of the alert builder: a mono index on the left, the fields on the right. */
+function Step({ index, title, hint, children }: { index: string; title: string; hint?: string; children: ReactNode }) {
   return (
-    <div className="relative">
-      <div className={cx(inputClass, "flex h-auto min-h-11 flex-wrap items-center gap-1.5 py-1.5")}>
-        {value.map((s) => (
-          <span key={s} className="inline-flex items-center gap-1 rounded-full bg-brand-soft py-0.5 pr-1 pl-2.5 text-sm text-brand">
-            {s}
-            <button type="button" onClick={() => onChange(value.filter((x) => x !== s))} aria-label={`Remove ${s}`} className="rounded-full p-0.5 hover:bg-brand/10">
-              <X className="size-3.5" />
-            </button>
-          </span>
-        ))}
-        <input
-          value={q}
-          onChange={(e) => (setQ(e.target.value), setOpen(true))}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && options[0]) {
-              e.preventDefault();
-              onChange([...value, options[0]]);
-              setQ("");
-            }
-          }}
-          placeholder={value.length ? "Add another state" : "Type a state, e.g. Chhattisgarh"}
-          className="h-8 min-w-40 flex-1 bg-transparent text-sm focus:outline-none"
-          aria-label="Add a state"
-          role="combobox"
-          aria-expanded={open}
-        />
+    <section className="grid gap-x-6 gap-y-4 border-b border-line py-7 first:pt-0 last:border-0 last:pb-0 sm:grid-cols-[3.5rem_1fr]">
+      <div className="flex items-baseline gap-3 sm:block">
+        <p className="num text-sm text-signal-text">{index}</p>
+        <div className="h-px w-6 bg-line-strong sm:mt-3" aria-hidden="true" />
       </div>
-      {open && options.length > 0 && (
-        <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-xl shadow-black/10" role="listbox">
-          {options.map((s) => (
-            <li key={s}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={false}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => (onChange([...value, s]), setQ(""))}
-                className="w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-surface-2"
-              >
-                {s}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+      <div className="min-w-0">
+        <h3 className="text-[15px] font-medium text-ink">{title}</h3>
+        {hint && <p className="mt-0.5 text-sm text-ink-3">{hint}</p>}
+        <div className="mt-4 space-y-4">{children}</div>
+      </div>
+    </section>
   );
 }
 
@@ -116,7 +69,9 @@ function AlertForm({
   const [d, setD] = useState<Draft>(initial);
   const [pin, setPin] = useState("");
   const [errors, setErrors] = useState<Record<string, string[]>>({});
-  useEffect(() => setD(initial), [initial]);
+  useEffect(() => {
+    setD(initial);
+  }, [initial]);
 
   const criteria = useDebounced<AlertCriteria>(
     { states: d.states, pin_prefixes: d.pin_prefixes, sectors: d.sectors, keywords: d.keywords, min_value_inr: d.min_value_inr },
@@ -152,121 +107,124 @@ function AlertForm({
   // Only the fields live in the <form>; the sidebar (with the sign-in form) sits outside
   // it, because forms can't nest. The save button joins the form through its id.
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_300px]">
+    <div className="grid gap-10 lg:grid-cols-[1fr_320px]">
       <form
         id="alert-form"
         onSubmit={(e) => {
           e.preventDefault();
           save.mutate();
         }}
-        className="space-y-6"
       >
-        <Field label="Where" hint="Choose states, PIN areas, or both. Leave empty for all of India." error={errors.states?.[0]}>
-          <StatePicker value={d.states} onChange={(states) => setD({ ...d, states })} />
-        </Field>
-
-        <div>
-          <span className="mb-1.5 block text-sm font-medium text-ink">PIN areas</span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {d.pin_prefixes.map((p) => (
-              <span key={p} className="inline-flex items-center gap-1 rounded-full bg-brand-soft py-1 pr-1 pl-3 text-sm text-brand">
-                <MapPin className="size-3.5" /> {PIN_SHORTCUTS.find((s) => s.pin === p)?.label ?? "PIN"} {p}xxx
-                <button type="button" onClick={() => setD({ ...d, pin_prefixes: d.pin_prefixes.filter((x) => x !== p) })} aria-label={`Remove PIN ${p}`} className="rounded-full p-0.5 hover:bg-brand/10">
-                  <X className="size-3.5" />
-                </button>
-              </span>
-            ))}
-            <span className="w-32">
-              <input
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addPin(pin))}
-                inputMode="numeric"
-                placeholder="PIN prefix"
-                className={cx(inputClass, "h-9")}
-                aria-label="PIN code prefix"
-              />
-            </span>
-            <Button type="button" size="sm" onClick={() => addPin(pin)} disabled={pin.length < 2}>
-              <Plus className="size-4" /> Add
-            </Button>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {PIN_SHORTCUTS.filter((s) => !d.pin_prefixes.includes(s.pin)).map((s) => (
-              <button type="button" key={s.pin} onClick={() => addPin(s.pin)} className="rounded-full border border-dashed border-line px-2.5 py-1 text-xs text-ink-2 hover:border-brand hover:text-brand">
-                + {s.label} ({s.pin})
-              </button>
-            ))}
-          </div>
-          {errors.pin_prefixes && <p className="mt-1.5 text-xs text-critical">{errors.pin_prefixes[0]}</p>}
-          <p className="mt-1.5 text-xs text-ink-3">The first 3 digits of a PIN code cover a district: 490 is Bhilai and Durg.</p>
-        </div>
-
-        <div>
-          <span className="mb-1.5 block text-sm font-medium text-ink">What kind of work</span>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Sectors">
-            {SECTORS.map((s) => {
-              const on = d.sectors.includes(s.slug);
-              return (
-                <button
-                  type="button"
-                  key={s.slug}
-                  aria-pressed={on}
-                  onClick={() => setD({ ...d, sectors: on ? d.sectors.filter((x) => x !== s.slug) : [...d.sectors, s.slug] })}
-                  className={cx(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
-                    on ? "border-brand bg-brand-soft font-medium text-brand" : "border-line text-ink-2 hover:bg-surface-2",
-                  )}
-                >
-                  <SectorIcon slug={s.slug} /> {s.label}
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-1.5 text-xs text-ink-3">None selected means every sector.</p>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Keywords (optional)" hint="Comma-separated. Any one must appear in the title." error={errors.keywords?.[0]}>
-            <input value={d.keywords} onChange={(e) => setD({ ...d, keywords: e.target.value })} placeholder="e.g. CCTV, solar" className={inputClass} />
+        <Step index="01" title="Where" hint="States, PIN areas, or both. Leave empty for all of India.">
+          <Field label="States" error={errors.states?.[0]}>
+            <MultiPicker
+              value={d.states}
+              onChange={(states) => setD({ ...d, states })}
+              options={INDIAN_STATES}
+              label="Add a state"
+              placeholder="Type a state, e.g. Chhattisgarh"
+              morePlaceholder="Add another state"
+            />
           </Field>
-          <Field label="Minimum value">
-            <select value={d.min_value_inr ?? ""} onChange={(e) => setD({ ...d, min_value_inr: e.target.value || null })} className={inputClass}>
-              {MIN_VALUES.map((m) => (
-                <option key={m.v} value={m.v}>
-                  {m.label}
-                </option>
+          <div>
+            <span className="mb-1.5 block text-sm font-medium text-ink">PIN areas</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {d.pin_prefixes.map((p) => (
+                <Chip key={p} onRemove={() => setD({ ...d, pin_prefixes: d.pin_prefixes.filter((x) => x !== p) })} removeLabel={`Remove PIN ${p}`}>
+                  <MapPin className="size-3" aria-hidden="true" />
+                  {PIN_SHORTCUTS.find((s) => s.pin === p)?.label ?? "PIN"} <span className="num">{p}xxx</span>
+                </Chip>
               ))}
-            </select>
-          </Field>
-        </div>
+              <span className="w-32">
+                <input
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addPin(pin))}
+                  inputMode="numeric"
+                  placeholder="PIN prefix"
+                  className={cx(inputClass, "num h-9")}
+                  aria-label="PIN code prefix"
+                />
+              </span>
+              <Button type="button" size="sm" className="h-9" onClick={() => addPin(pin)} disabled={pin.length < 2}>
+                <Plus className="size-3.5" /> Add
+              </Button>
+            </div>
+            {PIN_SHORTCUTS.some((s) => !d.pin_prefixes.includes(s.pin)) && (
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                <span className="label mr-1">Quick add</span>
+                {PIN_SHORTCUTS.filter((s) => !d.pin_prefixes.includes(s.pin)).map((s) => (
+                  <button
+                    type="button"
+                    key={s.pin}
+                    onClick={() => addPin(s.pin)}
+                    className="tag h-7 border-dashed bg-transparent text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+                  >
+                    <Plus className="size-3 text-ink-3" aria-hidden="true" />
+                    {s.label} <span className="num text-ink-3">{s.pin}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {errors.pin_prefixes && <p className="mt-1.5 text-xs text-critical">{errors.pin_prefixes[0]}</p>}
+            <p className="mt-2 text-xs text-ink-3">The first 3 digits of a PIN code cover a district: 490 is Bhilai and Durg.</p>
+          </div>
+        </Step>
 
-        <Field label="Alert name" hint={`Leave empty to use “${suggestName(d)}”.`} error={errors.name?.[0]}>
-          <input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} maxLength={120} placeholder={suggestName(d)} className={inputClass} />
-        </Field>
-        {errors.non_field_errors && <p className="text-sm text-critical">{errors.non_field_errors[0]}</p>}
+        <Step index="02" title="What kind of work" hint="None selected means every sector.">
+          <SectorToggles value={d.sectors} onChange={(sectors) => setD({ ...d, sectors })} />
+        </Step>
+
+        <Step index="03" title="Refine" hint="Optional. Narrow the alert to the tenders worth your time.">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Keywords" hint="Comma-separated. Any one must appear in the title." error={errors.keywords?.[0]}>
+              <input value={d.keywords} onChange={(e) => setD({ ...d, keywords: e.target.value })} placeholder="e.g. CCTV, solar" className={inputClass} />
+            </Field>
+            <Field label="Minimum value">
+              <select value={d.min_value_inr ?? ""} onChange={(e) => setD({ ...d, min_value_inr: e.target.value || null })} className={inputClass}>
+                {MIN_VALUES.map((m) => (
+                  <option key={m.v} value={m.v}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        </Step>
+
+        <Step index="04" title="Name">
+          <Field label="Alert name" hint={`Leave empty to use “${suggestName(d)}”.`} error={errors.name?.[0]}>
+            <input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} maxLength={120} placeholder={suggestName(d)} className={inputClass} />
+          </Field>
+          {errors.non_field_errors && <p className="text-sm text-critical">{errors.non_field_errors[0]}</p>}
+        </Step>
       </form>
 
       <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-        <Card className="p-5">
-          <p className="text-sm text-ink-2">Open tenders matching right now</p>
-          <p className="mt-1 text-4xl font-bold tracking-tight text-ink tabular-nums" aria-live="polite">
-            {preview.data ? formatCount(preview.data.count) : <Skeleton className="h-10 w-16" />}
+        <Card ticks className="p-5">
+          <p className="label flex items-center gap-2">
+            <span className="live-dot" aria-hidden="true" /> Matching now
           </p>
-          <ul className="mt-4 space-y-3">
-            {preview.data?.sample.map((t) => (
-              <li key={t.id} className="text-sm">
-                <Link to={`/tenders/${t.id}`} className="line-clamp-2 font-medium text-ink hover:text-brand">
-                  {t.title}
-                </Link>
-                <p className="text-xs text-ink-3">
-                  {t.state} · {formatInr(t.value_inr, { short: true })}
-                </p>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 border-t border-line pt-3 text-xs text-ink-3">
-            You'll get one email listing these now, then one after each hourly crawl when new ones open. Nothing if nothing is new.
+          <p className={cx("num mt-3 text-5xl font-medium tracking-[-0.06em] text-ink transition-opacity", preview.isPlaceholderData && "opacity-50")} aria-live="polite">
+            {preview.data ? formatCount(preview.data.count) : <Skeleton className="h-12 w-24" />}
+          </p>
+          <p className="mt-1 text-sm text-ink-3">open tenders fit this alert</p>
+          {(preview.data?.sample.length ?? 0) > 0 && (
+            <ul className="mt-5 border-t border-line">
+              {preview.data?.sample.map((t) => (
+                <li key={t.id} className="border-b border-line py-3 last:border-0">
+                  <Link to={`/tenders/${t.id}`} className="line-clamp-2 text-sm font-medium text-ink decoration-line-strong underline-offset-4 hover:underline">
+                    {t.title}
+                  </Link>
+                  <p className="num mt-1 text-xs text-ink-3">
+                    {t.state || "India"} · {formatInr(t.value_inr, { short: true })}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-4 rounded-md bg-surface-2 px-3 py-2.5 text-xs text-ink-2">
+            One email now with these, then one after each hourly crawl when new ones open. Nothing if nothing is new.
           </p>
         </Card>
         {me?.authenticated ? (
@@ -276,14 +234,15 @@ function AlertForm({
                 Cancel
               </Button>
             )}
-            <Button type="submit" form="alert-form" variant="primary" className="flex-1" disabled={save.isPending}>
+            <Button type="submit" form="alert-form" variant="primary" size="lg" className="flex-1" disabled={save.isPending}>
               <BellRing className="size-4" /> {save.isPending ? "Saving…" : editing ? "Save changes" : "Create alert"}
             </Button>
           </div>
         ) : (
           <Card className="p-5">
-            <p className="font-semibold text-ink">Sign in to save this alert</p>
-            <p className="mt-1 mb-4 text-sm text-ink-2">We email alerts to your Google account address. Your choices above are kept.</p>
+            <p className="label">Step 05 · Sign in</p>
+            <p className="mt-2.5 font-medium text-ink">Sign in to save this alert</p>
+            <p className="mt-1 mb-4 text-sm text-ink-2">We email alerts to your Google account address. Your choices on the left are kept.</p>
             <GoogleButton />
           </Card>
         )}
@@ -311,47 +270,41 @@ function AlertRow({ a, onEdit }: { a: Alert; onEdit: () => void }) {
   });
   const where = [...a.states, ...a.pin_prefixes.map((p) => `PIN ${p}xxx`)];
   return (
-    <Card className={cx("p-5", !a.active && "opacity-70")}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <article className={cx("panel flex flex-col transition-opacity", !a.active && "opacity-70")}>
+      <div className="flex items-start justify-between gap-4 p-5">
         <div className="min-w-0">
-          <p className="font-semibold text-ink">{a.name}</p>
-          <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
-            <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-ink-2">
-              <MapPin className="size-3.5" /> {where.length ? where.join(", ") : "All of India"}
+          <p className="flex items-center gap-2 font-medium text-ink">
+            <span className={cx("size-1.5 shrink-0 rounded-full", a.active ? "bg-good" : "bg-line-strong")} aria-hidden="true" />
+            <span className="truncate">{a.name}</span>
+          </p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <span className="tag">
+              <MapPin className="size-3 text-ink-3" aria-hidden="true" /> {where.length ? where.join(", ") : "All of India"}
             </span>
             {a.sectors.map((s) => (
-              <span key={s} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-ink-2">
-                <SectorIcon slug={s} className="size-3.5" /> {sectorMeta(s).label}
+              <span key={s} className="tag">
+                <SectorIcon slug={s} className="size-3 text-ink-3" /> {sectorMeta(s).label}
               </span>
             ))}
-            {a.keywords && <span className="rounded-full bg-surface-2 px-2.5 py-1 text-ink-2">“{a.keywords}”</span>}
-            {a.min_value_inr && <span className="rounded-full bg-surface-2 px-2.5 py-1 text-ink-2">≥ {formatInr(a.min_value_inr, { short: true })}</span>}
+            {a.keywords && <span className="tag">“{a.keywords}”</span>}
+            {a.min_value_inr && <span className="tag num">≥ {formatInr(a.min_value_inr, { short: true })}</span>}
           </div>
-          <p className="mt-2 text-xs text-ink-3">{a.last_sent_at ? `Last email ${formatDate(a.last_sent_at)}` : "No email sent yet"}</p>
+          <p className="num mt-3 text-xs text-ink-3">{a.last_sent_at ? `Last email ${formatDate(a.last_sent_at)}` : "No email sent yet"}</p>
         </div>
-        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink-2">
-          <span>{a.active ? "On" : "Paused"}</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={a.active}
-            aria-label={`${a.active ? "Pause" : "Resume"} ${a.name}`}
-            onClick={() => toggle.mutate()}
-            className={cx("relative h-6 w-11 rounded-full transition-colors", a.active ? "bg-brand" : "bg-line")}
-          >
-            <span className={cx("absolute top-0.5 size-5 rounded-full bg-white shadow transition-[left]", a.active ? "left-[22px]" : "left-0.5")} />
-          </button>
-        </label>
+        <div className="flex shrink-0 items-center gap-2.5">
+          <span className="label">{a.active ? "On" : "Paused"}</span>
+          <Switch checked={a.active} onChange={() => toggle.mutate()} label={`${a.active ? "Pause" : "Resume"} ${a.name}`} />
+        </div>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-3">
+      <div className="mt-auto flex flex-wrap items-center gap-1 border-t border-line px-2 py-1.5">
         <Button size="sm" variant="ghost" onClick={() => test.mutate()} disabled={test.isPending}>
-          <Send className="size-4" /> {test.isPending ? "Sending…" : "Send test email"}
+          <Send className="size-3.5" /> {test.isPending ? "Sending…" : "Send test"}
         </Button>
         <Button size="sm" variant="ghost" onClick={onEdit}>
-          <Pencil className="size-4" /> Edit
+          <Pencil className="size-3.5" /> Edit
         </Button>
         {confirm ? (
-          <span className="ml-auto inline-flex items-center gap-2 text-sm">
+          <span className="ml-auto inline-flex items-center gap-1.5 pl-2 text-sm text-ink-2">
             Delete this alert?
             <Button size="sm" variant="danger" onClick={() => del.mutate()}>
               Delete
@@ -361,12 +314,12 @@ function AlertRow({ a, onEdit }: { a: Alert; onEdit: () => void }) {
             </Button>
           </span>
         ) : (
-          <Button size="sm" variant="ghost" className="ml-auto text-critical" onClick={() => setConfirm(true)}>
-            <Trash2 className="size-4" /> Delete
+          <Button size="sm" variant="ghost" className="ml-auto hover:!text-critical" onClick={() => setConfirm(true)}>
+            <Trash2 className="size-3.5" /> Delete
           </Button>
         )}
       </div>
-    </Card>
+    </article>
   );
 }
 
@@ -376,7 +329,7 @@ export default function Alerts() {
   const fromUrl = useMemo<Draft>(
     () => ({
       ...EMPTY,
-      states: params.getAll("state").filter((s) => ALL_STATES.includes(s)),
+      states: params.getAll("state").filter((s) => INDIAN_STATES.includes(s)),
       sectors: params.getAll("sector").filter((s) => SECTORS.some((x) => x.slug === s)),
       pin_prefixes: params.getAll("pin").filter((p) => /^[1-9]\d{1,5}$/.test(p)),
       keywords: params.get("keywords") ?? "",
@@ -393,45 +346,52 @@ export default function Alerts() {
   );
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-ink">Email alerts</h1>
-          <p className="mt-1 max-w-2xl text-ink-2">
-            Get an email when a tender opens in your area. For example, everything in Chhattisgarh, or only road and building work around Bhilai.
-          </p>
-        </div>
-        {me?.authenticated && !showForm && (
-          <Button variant="primary" onClick={() => setMode("new")}>
-            <Plus className="size-4" /> New alert
-          </Button>
-        )}
-      </div>
+    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
+      <PageHeader
+        kicker="Alerts"
+        title="Email alerts"
+        actions={
+          me?.authenticated && !showForm ? (
+            <Button variant="primary" onClick={() => setMode("new")}>
+              <Plus className="size-4" /> New alert
+            </Button>
+          ) : undefined
+        }
+      >
+        Get an email when a tender opens in your area. For example, everything in Chhattisgarh, or only road and building work around Bhilai.
+      </PageHeader>
 
       {loading ? (
-        <Skeleton className="h-80 w-full rounded-2xl" />
+        <Skeleton className="mt-8 h-80 w-full rounded-lg" />
       ) : (
         <>
           {showForm && (
-            <Card className="mb-10 p-5 sm:p-8">
-              <h2 className="mb-6 text-lg font-semibold text-ink">{editing ? `Edit “${editing.name}”` : "New alert"}</h2>
-              <AlertForm
-                initial={initial}
-                editing={editing}
-                onSaved={() => setMode(null)}
-                onCancel={me?.authenticated && (alerts.data?.length ?? 0) > 0 ? () => setMode(null) : undefined}
-              />
+            <Card className="mt-8 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5 sm:px-8">
+                <h2 className="text-[15px] font-medium text-ink">{editing ? `Edit “${editing.name}”` : "New alert"}</h2>
+                <p className="label">{editing ? "Editing" : "4 steps · about a minute"}</p>
+              </div>
+              <div className="p-5 sm:p-8">
+                <AlertForm
+                  initial={initial}
+                  editing={editing}
+                  onSaved={() => setMode(null)}
+                  onCancel={me?.authenticated && (alerts.data?.length ?? 0) > 0 ? () => setMode(null) : undefined}
+                />
+              </div>
             </Card>
           )}
 
           {me?.authenticated && (
-            <section>
-              <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-ink">
-                <Mail className="size-5 text-brand" /> Your alerts
-                <span className="text-sm font-normal text-ink-3">sent to {me.user?.email}</span>
-              </h2>
+            <section className="mt-12">
+              <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-lg font-semibold text-ink">
+                  Your alerts {alerts.data && <span className="num ml-1 text-sm font-normal text-ink-3">{alerts.data.length}</span>}
+                </h2>
+                <p className="num text-xs text-ink-3">sent to {me.user?.email}</p>
+              </div>
               {alerts.isLoading ? (
-                <Skeleton className="h-32 w-full rounded-2xl" />
+                <Skeleton className="h-32 w-full rounded-lg" />
               ) : alerts.data?.length ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   {alerts.data.map((a) => (
@@ -439,7 +399,7 @@ export default function Alerts() {
                   ))}
                 </div>
               ) : (
-                <EmptyState icon={<BellRing className="size-6" />} title="No alerts yet">
+                <EmptyState icon={<BellRing className="size-5" />} title="No alerts yet">
                   Create your first alert above.
                 </EmptyState>
               )}

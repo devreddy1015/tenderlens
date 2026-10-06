@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { Button, cx, inputClass } from "../components/ui";
 import { ApiError, api, type Me, type SiteConfig } from "./api";
 import { useTheme } from "./theme";
 import { useToast } from "./toast";
@@ -11,6 +12,9 @@ interface AuthState {
   signOut: () => void;
   setMe: (me: Me) => void;
 }
+
+/** Queries holding one user's data: dropped on sign-out so the next person never sees them. */
+const PRIVATE_KEYS = new Set(["alerts", "workspace", "members", "api-keys", "pipeline", "pipeline-summary", "subscription", "copilot"]);
 
 const AuthContext = createContext<AuthState>({
   me: undefined,
@@ -29,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mutationFn: api.logout,
     onSuccess: (m) => {
       qc.setQueryData(["me"], m);
-      qc.removeQueries({ queryKey: ["alerts"] });
+      qc.removeQueries({ predicate: (q) => PRIVATE_KEYS.has(String(q.queryKey[0])) });
       toast("success", "Signed out");
     },
   });
@@ -116,7 +120,7 @@ export function GoogleButton({ onDone }: { onDone?: () => void }) {
         window.google.accounts.id.renderButton(ref.current, {
           theme: dark ? "filled_black" : "outline",
           size: "large",
-          shape: "pill",
+          shape: "rectangular",
           text: "continue_with",
           logo_alignment: "left",
         });
@@ -127,7 +131,7 @@ export function GoogleButton({ onDone }: { onDone?: () => void }) {
     };
   }, [clientId, dark]);
 
-  if (!config) return <div className="skeleton h-10 w-56 rounded-full" />;
+  if (!config) return <div className="skeleton h-10 w-56 rounded-md" />;
   if (!clientId) {
     return config.dev_login ? (
       <DevLogin onDone={onDone} />
@@ -169,10 +173,12 @@ function DevLogin({ onDone }: { onDone?: () => void }) {
         onChange={(e) => setEmail(e.target.value)}
         placeholder="you@example.com"
         aria-label="Email for development sign-in"
-        className="h-10 rounded-full border border-line bg-surface px-4 text-sm"
+        className={cx(inputClass, "min-w-0 flex-1 basis-48")}
       />
-      <button className="h-10 rounded-full bg-brand px-4 text-sm font-semibold text-brand-ink">Dev sign-in</button>
-      <span className="w-full text-xs text-ink-3">Local development login. Google sign-in replaces this once GOOGLE_CLIENT_ID is set.</span>
+      <Button variant="primary">Dev sign-in</Button>
+      <span className="w-full text-xs text-ink-3">
+        <span className="label mr-1.5 text-signal-text">Dev</span>Local development login. Google sign-in replaces this once GOOGLE_CLIENT_ID is set.
+      </span>
     </form>
   );
 }

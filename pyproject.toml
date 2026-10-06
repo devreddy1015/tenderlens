@@ -1,7 +1,7 @@
 [project]
 name = "tenderlens"
 version = "0.1.0"
-description = "Crawls public Indian government tenders, stores them idempotently, resolves buyer organisations and serves them through a searchable API."
+description = "Finds every relevant Indian public tender, explains its documents with a self-hosted LLM, and runs the bid pipeline for a team."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
@@ -17,11 +17,16 @@ dependencies = [
     "lxml>=5.3",
     "pydantic>=2.10",
     "rapidfuzz>=3.12",
-    "elasticsearch>=8.15,<9",
     "gunicorn>=23.0",
     "google-auth>=2.38",
     "requests>=2.32",
     "whitenoise>=6.8",
+    # Copilot: PDF text, embeddings (pgvector) and the optional cross-encoder reranker.
+    "pgvector>=0.3",
+    "pymupdf>=1.25",
+    "sentence-transformers>=3.3",
+    "torch>=2.5",
+    "numpy>=2.0",
 ]
 
 [dependency-groups]
@@ -35,6 +40,16 @@ dev = [
 [tool.uv]
 package = false
 
+# CPU-only PyTorch: the CUDA wheels are ~2 GB and the web/worker image runs on a CPU server.
+# Fine-tuning (GPU) lives in llm/ with its own pyproject.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 testpaths = ["tests"]
@@ -44,7 +59,8 @@ filterwarnings = [
     "ignore:No directory at:UserWarning",
 ]
 markers = [
-    "es: needs a running Elasticsearch (skipped when ES_URL is unreachable)",
+    "models: loads the real embedding / reranker models (slow on the first run, downloads weights)",
+    "llm: needs a running OpenAI-compatible LLM server at LLM_BASE_URL",
 ]
 
 [tool.ruff]

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { classBreaks, classOf } from "../components/IndiaMap";
 import { DEFAULT_FILTERS, filtersFromParams, filtersToParams, toApiParams } from "./api";
-import { closesIn, formatInr, timeAgo, windowUsed } from "./format";
+import { closesIn, countdown, formatInr, timeAgo, windowUsed } from "./format";
 
 describe("formatInr", () => {
   it("uses lakh and crore", () => {
@@ -24,6 +24,13 @@ describe("dates", () => {
     expect(closesIn("2026-10-04T10:00:00+05:30", now).urgent).toBe(true);
     expect(closesIn("2026-10-02T15:00:00+05:30", now).text).toBe("Closes in 5h");
     expect(closesIn("2026-10-01T10:00:00+05:30", now).closed).toBe(true);
+  });
+  it("formats a compact countdown", () => {
+    expect(countdown("2026-10-18T14:30:00+05:30", now)).toEqual({ text: "16d 04h", urgent: false, closed: false });
+    expect(countdown("2026-10-02T15:07:00+05:30", now)).toEqual({ text: "5h 07m", urgent: true, closed: false });
+    expect(countdown("2026-10-05T10:00:00+05:30", now).urgent).toBe(true);
+    expect(countdown("2026-10-01T10:00:00+05:30", now).text).toBe("Closed");
+    expect(countdown("2026-10-02T10:00:40+05:30", now).text).toBe("< 1m");
   });
   it("time ago and window used", () => {
     expect(timeAgo("2026-10-02T09:35:00+05:30", now)).toBe("25 min ago");

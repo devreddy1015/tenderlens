@@ -163,9 +163,11 @@ def fetch_detail(self, run_id: int, tender_id: str, url: str) -> int:
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
 def parse_and_load(self, raw_page_id: int, run_id: int, tender_id: str) -> str:
-    page = RawPage.objects.get(pk=raw_page_id)
+    page = RawPage.objects.filter(pk=raw_page_id).first()
+    if page is None:  # redelivered after record_loaded discarded an unchanged re-fetch
+        return CrawlItem.objects.get(crawl_run_id=run_id, source_tender_id=tender_id).outcome
     result = load_detail_page(page)
-    pipeline.record_outcome(run_id, tender_id, result.outcome, raw_page_id)
+    pipeline.record_loaded(run_id, tender_id, raw_page_id, result)
     pipeline.maybe_finalize(run_id)
     return result.outcome
 
@@ -198,14 +200,20 @@ def prune_raw_pages() -> int:
     if detail_days is not None:
         from tenders.models import Tender
 
-        n, _ = (
+        old = (
             RawPage.objects.filter(
                 kind=RawPage.Kind.DETAIL, fetched_at__lt=now - timedelta(days=detail_days)
             )
             .exclude(pk__in=Tender.objects.filter(raw_page__isnull=False).values("raw_page"))
             .exclude(pk__in=Quarantine.objects.filter(raw_page__isnull=False).values("raw_page"))
-            .delete()
         )
+        # Items of unchanged re-fetches are deleted with their page (run totals stay on
+        # crawl_run) rather than set to NULL: an UPDATE needs free space, and a database at
+        # its size limit has none, so pruning must free space without writing new rows.
+        CrawlItem.objects.filter(raw_page__in=old, outcome=CrawlItem.Outcome.UNCHANGED).exclude(
+            crawl_run__status=CrawlRun.Status.RUNNING
+        ).delete()
+        n, _ = old.delete()
         deleted += n
     return deleted
 

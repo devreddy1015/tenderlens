@@ -1,211 +1,226 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Bell, Briefcase, Clock, MapPin, Search, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { ArrowRight, ArrowUpRight, KanbanSquare, ScanText, Search } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { IndiaMap } from "../components/IndiaMap";
-import { TenderCard, TenderCardSkeleton } from "../components/TenderCard";
-import { Button, Card, cx, SectionHeading, Skeleton } from "../components/ui";
-import { api, DEFAULT_FILTERS, type StateStat } from "../lib/api";
+import { InterfaceLines } from "../components/InterfaceLines";
+import { StatePanel, TopStates } from "../components/StatePanel";
+import { TenderListHeader, TenderRow, TenderRowSkeleton } from "../components/TenderCard";
+import { Button, ButtonLink, cx, SectionHeading, Skeleton, Stat, Tag } from "../components/ui";
+import { type AlertCriteria, api, DEFAULT_FILTERS, type SectorStat, type Source } from "../lib/api";
 import { formatCount, formatInr, timeAgo } from "../lib/format";
-import { SECTORS, SectorIcon, sectorMeta } from "../lib/sectors";
+import { useSources } from "../lib/queries";
+import { SectorIcon, sectorMeta } from "../lib/sectors";
+import { latestRun } from "../lib/sources";
 
-const QUICK = ["roads", "it", "security", "health", "electrical", "buildings"];
+const QUICK = ["roads", "buildings", "electrical", "it", "security", "health"];
+
+/** A plain ink link with a hairline underline that turns amber on hover. */
+const textLink =
+  "inline-flex items-center gap-1 text-sm font-medium text-ink underline decoration-line-strong underline-offset-4 transition-colors hover:decoration-signal";
+
+/** "4d", "3h", "12m": the time column of the feed. */
+function shortAgo(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return "—";
+  const mins = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60_000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
+}
+
+function Section({ children, rule = true, className }: { children: ReactNode; rule?: boolean; className?: string }) {
+  return (
+    <section className={cx(rule && "border-t border-line", className)}>
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">{children}</div>
+    </section>
+  );
+}
+
+// --- Hero ------------------------------------------------------------------------------
+
+/** "Source · CPPP, MP e-tenders +3": attribution from the live source list, never hard-coded. */
+function sourceLine(sources: Source[] | undefined): string {
+  const live = (sources ?? []).filter((s) => s.enabled);
+  if (live.length === 0) return "Source · official portals";
+  const names = live.slice(0, 2).map((s) => s.name).join(", ");
+  return `Source · ${names}${live.length > 2 ? ` +${live.length - 2}` : ""}`;
+}
+
+/** The hero's proof line. Every figure comes from /api/stats or /api/sources; while they load
+ *  (or if they fail) the line is simply absent rather than showing a made-up number. */
+function LiveProof() {
+  const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats });
+  const sources = useSources();
+  const portals = sources.data?.filter((s) => s.enabled).length;
+  const crawled = latestRun(sources.data) ?? stats.data?.last_crawl?.finished;
+  const parts = [
+    stats.data && `${formatCount(stats.data.open_tenders)} open tenders`,
+    portals ? `${formatCount(portals)} ${portals === 1 ? "portal" : "portals"} indexed` : null,
+    crawled && `updated ${timeAgo(crawled)}`,
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
+  return (
+    <p className="num mt-5 inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-2">
+      <span className="live-dot" aria-hidden="true" />
+      {parts.join(" · ")}
+      <Link to="/coverage" className="text-ink-3 underline decoration-line-strong underline-offset-4 hover:text-ink">
+        sources
+      </Link>
+    </p>
+  );
+}
 
 function Hero() {
   const nav = useNavigate();
   const [q, setQ] = useState("");
-  const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats });
-  const sectors = useQuery({ queryKey: ["sectors"], queryFn: api.sectors });
-  const totalValue = sectors.data?.reduce((s, x) => s + Number(x.value_inr ?? 0), 0);
-  const states = stats.data?.by_state.filter((s) => s.state !== "Unknown").length;
-
   return (
-    <section className="hero-glow relative overflow-hidden border-b border-line">
-      <div className="mx-auto grid max-w-7xl items-start gap-10 px-4 pt-14 pb-12 sm:px-6 sm:pt-20 sm:pb-16 lg:grid-cols-[1.45fr_1fr]">
+    <section className="relative overflow-hidden">
+      <div className="grid-paper pointer-events-none absolute inset-0 [mask-image:radial-gradient(90%_75%_at_50%_0%,black,transparent_75%)]" aria-hidden="true" />
+      <InterfaceLines className="field-mask-hero [--calm-h:52%] [--calm-w:44%] [--calm-x:27%] [--calm-y:50%]" />
+      <div className="relative mx-auto grid max-w-7xl grid-cols-1 gap-12 px-4 pt-16 pb-16 sm:px-6 sm:pt-24 sm:pb-24 lg:grid-cols-[1.3fr_1fr] lg:items-center lg:gap-16">
         <div>
-        <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-line bg-surface/70 px-3 py-1 text-xs font-medium text-ink-2 backdrop-blur">
-          <span className="size-1.5 rounded-full bg-good" aria-hidden="true" />
-          Live data · updated {timeAgo(stats.data?.last_crawl?.finished)}
-        </p>
-        <h1 className="max-w-3xl text-4xl font-extrabold tracking-tight text-ink sm:text-6xl sm:leading-[1.05] lg:text-[3.25rem]">
-          Find government tenders <span className="text-brand">before they close.</span>
-        </h1>
-        <p className="mt-5 max-w-2xl text-lg text-ink-2">
-          Every open tender from India's central e-procurement portal, in one place. Search it, see it on a map, and get an email when something opens in your area.
-        </p>
+          <p className="eyebrow">Tender intelligence for Indian bidders</p>
+          <h1 className="mt-6 text-[2.5rem] leading-[1.04] font-semibold tracking-[-0.035em] sm:text-6xl lg:text-[3.6rem]">
+            <span className="block text-ink">Every Indian government tender,</span>
+            <span className="block text-ink-3">read in minutes, bid with confidence.</span>
+          </h1>
+          <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-ink-2">
+            Find work across central ministries, PSUs and state portals. Upload the documents and get the EMD, dates and eligibility with page
+            citations. Track every bid with your team until it is won.
+          </p>
+          <LiveProof />
 
-        <form
-          className="mt-8 flex max-w-2xl flex-col gap-2 rounded-2xl border border-line bg-surface p-2 shadow-xl shadow-black/5 sm:flex-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            nav(`/tenders${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ""}`);
-          }}
-          role="search"
-        >
-          <label className="flex flex-1 items-center gap-3 px-3">
-            <Search className="size-5 shrink-0 text-ink-3" aria-hidden="true" />
+          <form
+            role="search"
+            className="mt-9 flex max-w-xl items-center gap-2 rounded-lg border border-line-strong bg-surface p-1.5 pl-3.5 shadow-panel transition-colors focus-within:border-signal"
+            onSubmit={(e) => {
+              e.preventDefault();
+              nav(`/tenders${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ""}`);
+            }}
+          >
+            <Search className="size-4 shrink-0 text-ink-3" aria-hidden="true" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Road repair, CCTV, solar plant, AIIMS…"
-              className="h-12 w-full bg-transparent text-base text-ink placeholder:text-ink-3 focus:outline-none"
+              className="h-11 min-w-0 flex-1 bg-transparent text-[15px] text-ink placeholder:text-ink-3 focus:outline-none"
               aria-label="Search tenders"
             />
-          </label>
-          <Button type="submit" variant="primary" size="lg" className="rounded-xl">
-            Search tenders
-          </Button>
-        </form>
+            <Button type="submit" variant="primary" size="lg" className="h-11">
+              Search <ArrowRight className="size-4" aria-hidden="true" />
+            </Button>
+          </form>
+          <p className="mt-3 hidden items-center gap-1.5 text-xs text-ink-3 lg:flex">
+            Press <kbd className="kbd">/</kbd> to search from any page. Tender IDs and buyer names work too.
+          </p>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {QUICK.map((slug) => (
-            <Link
-              key={slug}
-              to={`/tenders?sector=${slug}`}
-              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-sm text-ink-2 transition-colors hover:border-brand hover:text-brand"
-            >
-              <SectorIcon slug={slug} className="size-4" />
-              {sectorMeta(slug).label}
-            </Link>
-          ))}
+          <div className="mt-8 flex flex-wrap items-center gap-2">
+            <span className="label mr-1">Jump to</span>
+            {QUICK.map((slug) => (
+              <Link key={slug} to={`/tenders?sector=${slug}`} className="tag h-7 px-2.5 transition-colors hover:border-line-strong hover:text-ink">
+                <SectorIcon slug={slug} className="size-3.5" />
+                {sectorMeta(slug).label}
+              </Link>
+            ))}
+          </div>
         </div>
-
-        <dl className="mt-12 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
-          {[
-            { label: "Open tenders", value: stats.data && formatCount(stats.data.open_tenders) },
-            { label: "Closing in 7 days", value: stats.data && formatCount(stats.data.closing_this_week) },
-            { label: "Disclosed value", value: totalValue !== undefined && formatInr(totalValue, { short: true }) },
-            { label: "States & UTs", value: states !== undefined && formatCount(states) },
-          ].map((s) => (
-            <div key={s.label} className="bg-surface px-5 py-4">
-              <dt className="text-sm text-ink-2">{s.label}</dt>
-              <dd className="mt-1 text-2xl font-bold tracking-tight text-ink">{s.value || <Skeleton className="h-8 w-20" />}</dd>
-            </div>
-          ))}
-        </dl>
-        </div>
-        <JustPublished />
+        <Feed />
       </div>
     </section>
   );
 }
 
-function JustPublished() {
+/** The newest tenders as a log: relative time, title, state and value. */
+function Feed() {
   const q = useQuery({ queryKey: ["newest"], queryFn: () => api.tenders({ ...DEFAULT_FILTERS, sort: "newest" }) });
+  const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats });
+  const sources = useSources();
   return (
-    <div className="hidden rounded-3xl border border-line bg-surface/80 p-5 shadow-2xl shadow-black/5 backdrop-blur lg:block">
-      <div className="mb-4 flex items-center justify-between">
-        <p className="flex items-center gap-2 text-sm font-semibold text-ink">
-          <span className="relative flex size-2">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-good opacity-60" />
-            <span className="relative inline-flex size-2 rounded-full bg-good" />
-          </span>
-          Just published
+    <aside className="panel ticks hidden bg-surface/90 backdrop-blur-sm lg:block" aria-label="Newly published tenders">
+      <div className="flex items-center justify-between border-b border-line px-4 py-3">
+        <p className="label flex items-center gap-2.5 text-ink-2">
+          <span className="live-dot" aria-hidden="true" />
+          Newly published
         </p>
-        <Link to="/tenders?sort=newest" className="text-xs font-semibold text-brand hover:underline">
-          See newest
+        <Link to="/tenders?sort=newest" className="inline-flex items-center gap-0.5 text-xs text-ink-2 hover:text-ink">
+          See newest <ArrowUpRight className="size-3.5" aria-hidden="true" />
         </Link>
       </div>
-      <ul className="divide-y divide-line">
+      <ol className="overflow-hidden">
         {q.isLoading
-          ? Array.from({ length: 4 }, (_, i) => (
-              <li key={i} className="py-3">
-                <Skeleton className="mb-2 h-4 w-full" />
-                <Skeleton className="h-3 w-1/2" />
+          ? Array.from({ length: 5 }, (_, i) => (
+              <li key={i} className="grid grid-cols-[36px_1fr] gap-3 border-b border-line px-4 py-3.5 last:border-b-0">
+                <Skeleton className="h-3 w-6" />
+                <div>
+                  <Skeleton className="mb-2 h-3.5 w-full" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
               </li>
             ))
-          : q.data?.results.slice(0, 4).map((t) => (
-              <li key={t.id} className="py-3 first:pt-0 last:pb-0">
-                <Link to={`/tenders/${t.id}`} className="group flex gap-3">
-                  <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
-                    <SectorIcon slug={t.sector} className="size-4" />
+          : q.data?.results.slice(0, 5).map((t) => (
+              <li key={t.id} className="border-b border-line last:border-b-0">
+                <Link to={`/tenders/${t.id}`} className="group grid grid-cols-[36px_1fr] gap-3 px-4 py-3.5 transition-colors hover:bg-surface-2/70">
+                  <span className="num pt-px text-xs text-ink-3" title={`Published ${timeAgo(t.published_at)}`}>
+                    {shortAgo(t.published_at)}
                   </span>
                   <span className="min-w-0">
-                    <span className="line-clamp-2 text-sm font-medium text-ink group-hover:text-brand">{t.title}</span>
-                    <span className="mt-0.5 block truncate text-xs text-ink-3">
-                      {t.state || "India"} · {formatInr(t.value_inr, { short: true })} · published {timeAgo(t.published_at)}
+                    <span className="line-clamp-2 text-[13.5px] leading-snug text-ink group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">
+                      {t.title}
+                    </span>
+                    <span className="mt-1.5 flex items-center gap-1.5 truncate text-xs text-ink-3">
+                      <SectorIcon slug={t.sector} className="size-3 shrink-0" />
+                      <span className="truncate">{t.state || "India"}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className={cx("num", t.value_inr && "text-ink-2")}>{formatInr(t.value_inr, { short: true })}</span>
                     </span>
                   </span>
                 </Link>
               </li>
             ))}
-      </ul>
-    </div>
-  );
-}
-
-export function StatePanel({ stat, state }: { stat?: StateStat; state: string }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold tracking-wider text-ink-3 uppercase">Selected state</p>
-      <h3 className="mt-1 flex items-center gap-2 text-2xl font-bold tracking-tight text-ink">
-        <MapPin className="size-5 text-brand" aria-hidden="true" />
-        {state}
-      </h3>
-      <dl className="mt-5 grid grid-cols-2 gap-4">
-        <div>
-          <dt className="text-sm text-ink-2">Open tenders</dt>
-          <dd className="text-3xl font-bold text-ink">{formatCount(stat?.open)}</dd>
-        </div>
-        <div>
-          <dt className="text-sm text-ink-2">Closing in 7 days</dt>
-          <dd className="text-3xl font-bold text-ink">{formatCount(stat?.closing_this_week)}</dd>
-        </div>
-        <div className="col-span-2">
-          <dt className="text-sm text-ink-2">Disclosed value</dt>
-          <dd className="text-lg font-semibold text-ink">{formatInr(stat?.value_inr)}</dd>
-        </div>
-        {stat?.top_sector && (
-          <div className="col-span-2">
-            <dt className="text-sm text-ink-2">Most common work</dt>
-            <dd className="mt-1 inline-flex items-center gap-1.5 font-medium text-ink">
-              <SectorIcon slug={stat.top_sector} />
-              {sectorMeta(stat.top_sector).label}
-            </dd>
-          </div>
-        )}
-      </dl>
-      <div className="mt-6 flex flex-wrap gap-2">
-        <Link to={`/tenders?state=${encodeURIComponent(state)}`} className="inline-flex h-10 items-center gap-2 rounded-full bg-brand px-4 text-sm font-semibold text-brand-ink hover:brightness-110">
-          View tenders <ArrowRight className="size-4" />
-        </Link>
-        <Link to={`/alerts?state=${encodeURIComponent(state)}`} className="inline-flex h-10 items-center gap-2 rounded-full border border-line px-4 text-sm font-semibold text-ink hover:bg-surface-2">
-          <Bell className="size-4" /> Alert me
-        </Link>
+      </ol>
+      <div className="label flex justify-between border-t border-line px-4 py-2.5 text-[10px]">
+        <span>{sourceLine(sources.data)}</span>
+        <span>Crawled {stats.data ? timeAgo(stats.data.last_crawl?.finished) : "…"}</span>
       </div>
-    </div>
+    </aside>
   );
 }
 
-function TopStates({ data, selected, onSelect }: { data?: StateStat[]; selected?: string; onSelect: (s: string) => void }) {
-  const top = (data ?? []).slice(0, 6);
-  const max = top[0]?.open ?? 1;
-  if (!top.length) return null;
+/** Four headline numbers on a hairline grid, right under the hero. */
+function Readout() {
+  const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats });
+  const sectors = useQuery({ queryKey: ["sectors"], queryFn: api.sectors });
+  const s = stats.data;
+  const totalValue = sectors.data?.reduce((sum, x) => sum + Number(x.value_inr ?? 0), 0);
+  const states = s?.by_state.filter((x) => x.state !== "Unknown").length;
+  const cells = [
+    { label: "Open tenders", value: s && formatCount(s.open_tenders), hint: s && `of ${formatCount(s.total_tenders)} indexed` },
+    {
+      label: "Closing in 7 days",
+      value: s && formatCount(s.closing_this_week),
+      hint: s && s.open_tenders > 0 && `${Math.round((s.closing_this_week / s.open_tenders) * 100)}% of open tenders`,
+    },
+    { label: "Disclosed value", value: totalValue !== undefined && formatInr(totalValue, { short: true }), hint: "sum of published values" },
+    { label: "States & UTs", value: states !== undefined && formatCount(states), hint: "with an open tender" },
+  ];
   return (
-    <div className="mt-8 border-t border-line pt-6">
-      <p className="mb-3 text-xs font-semibold tracking-wider text-ink-3 uppercase">Most open tenders</p>
-      <ul className="space-y-1">
-        {top.map((s) => (
-          <li key={s.state}>
-            <button
-              onClick={() => onSelect(s.state)}
-              aria-pressed={s.state === selected}
-              className={cx("w-full rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-2", s.state === selected && "bg-surface-2")}
-            >
-              <span className="flex justify-between gap-2">
-                <span className={s.state === selected ? "font-semibold text-ink" : "text-ink-2"}>{s.state}</span>
-                <span className="tabular-nums text-ink">{formatCount(s.open)}</span>
-              </span>
-              <span className="mt-1 block h-1 rounded-full bg-surface-2">
-                <span className="block h-1 rounded-full bg-brand" style={{ width: `${(s.open / max) * 100}%` }} />
-              </span>
-            </button>
-          </li>
+    <section className="border-y border-line bg-surface/60">
+      <dl className="mx-auto grid max-w-7xl grid-cols-2 gap-px bg-line sm:grid-cols-4 xl:border-x xl:border-line">
+        {cells.map((c) => (
+          <Stat
+            key={c.label}
+            label={c.label}
+            value={c.value || <Skeleton className="h-8 w-24" />}
+            hint={c.hint || <span className="invisible">–</span>}
+            className="bg-bg px-4 py-6 sm:px-6 sm:py-7 [&_dd.num]:text-[24px] [&_dd.num]:leading-none [&_dd.num]:whitespace-nowrap sm:[&_dd.num]:text-[32px]"
+          />
         ))}
-      </ul>
-    </div>
+      </dl>
+    </section>
   );
 }
+
+// --- 01 Map ----------------------------------------------------------------------------
 
 function MapSection() {
   const map = useQuery({ queryKey: ["map", ""], queryFn: () => api.map() });
@@ -213,140 +228,332 @@ function MapSection() {
   const current = selected ?? map.data?.[0]?.state;
   const stat = map.data?.find((s) => s.state === current);
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6">
+    <Section rule={false}>
       <SectionHeading
-        eyebrow="Tender map"
+        index="01"
+        label="Tender map"
         title="Where the work is"
         action={
-          <Link to="/map" className="inline-flex items-center gap-1 text-sm font-semibold text-brand hover:underline">
-            Full map & rankings <ArrowRight className="size-4" />
-          </Link>
+          <ButtonLink to="/map" size="sm">
+            Full map & rankings <ArrowRight className="size-3.5" aria-hidden="true" />
+          </ButtonLink>
         }
       >
         Open tenders by state. Hover or tap a state to see what is open there.
       </SectionHeading>
-      <Card className="grid gap-8 p-4 sm:p-6 lg:grid-cols-[1.5fr_1fr]">
-        <div className="mx-auto w-full max-w-xl">
-          {map.isLoading ? <Skeleton className="aspect-[600/674] w-full rounded-2xl" /> : <IndiaMap data={map.data} selected={current} onSelect={setSelected} />}
+      <div className="panel grid lg:grid-cols-[1.45fr_1fr]">
+        <div className="border-b border-line p-4 sm:p-8 lg:border-r lg:border-b-0">
+          <div className="mx-auto w-full max-w-xl">
+            {map.isLoading ? <Skeleton className="aspect-[600/674] w-full rounded-lg" /> : <IndiaMap data={map.data} selected={current} onSelect={setSelected} />}
+          </div>
         </div>
-        <div className="lg:border-l lg:border-line lg:pl-8">
+        <div className="p-5 sm:p-8">
           {current ? <StatePanel state={current} stat={stat} /> : <Skeleton className="h-64 w-full" />}
           <TopStates data={map.data} selected={current} onSelect={setSelected} />
         </div>
-      </Card>
-    </section>
+      </div>
+    </Section>
+  );
+}
+
+// --- 02 Sectors ------------------------------------------------------------------------
+
+const SECTOR_COLS = "grid-cols-[minmax(0,1fr)_40px_86px] gap-3 sm:grid-cols-[minmax(0,1fr)_56px_56px_84px] sm:gap-4";
+
+function SectorTable({ rows, max }: { rows: SectorStat[]; max: number }) {
+  return (
+    <div>
+      <div className={cx("label grid items-center border-b border-line px-4 py-2.5 sm:px-5", SECTOR_COLS)} aria-hidden="true">
+        <span>Sector</span>
+        <span className="text-right">Open</span>
+        <span className="hidden text-right sm:block">≤ 7d</span>
+        <span className="text-right">Value</span>
+      </div>
+      <ul>
+        {rows.map((s) => (
+          <li key={s.slug} className="border-b border-line last:border-b-0">
+            <Link
+              to={`/tenders?sector=${s.slug}`}
+              className={cx("group relative grid items-center px-4 py-3 transition-colors hover:bg-surface-2/70 sm:px-5", SECTOR_COLS)}
+            >
+              <span className="absolute inset-y-0 left-0 w-0.5 bg-signal opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+              <span className="min-w-0">
+                <span className="flex items-center gap-2.5 text-sm text-ink">
+                  <SectorIcon slug={s.slug} className="size-4 shrink-0 text-ink-3 transition-colors group-hover:text-signal-text" />
+                  <span className="truncate">{sectorMeta(s.slug).label}</span>
+                </span>
+                <span className="bar mt-2 ml-[26px] block max-w-48" aria-hidden="true">
+                  <span style={{ width: `${max ? Math.max(2, (s.open / max) * 100) : 0}%` }} />
+                </span>
+              </span>
+              <span className="num text-right text-sm text-ink">{formatCount(s.open)}</span>
+              <span className="num hidden text-right text-sm text-ink-2 sm:block">{formatCount(s.closing_this_week)}</span>
+              <span className={cx("num text-right text-sm whitespace-nowrap", s.value_inr ? "text-ink-2" : "text-ink-3")}>{s.value_inr ? formatInr(s.value_inr, { short: true }) : "—"}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
 function SectorsSection() {
   const sectors = useQuery({ queryKey: ["sectors"], queryFn: api.sectors });
+  const rows = [...(sectors.data ?? [])].sort((a, b) => b.open - a.open);
+  const max = rows[0]?.open ?? 0;
+  const half = Math.ceil(rows.length / 2);
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-6">
-      <SectionHeading eyebrow="Browse by type" title="Tenders by sector">
-        Every tender is sorted by the kind of work, from road building to CCTV and lab equipment.
+    <Section>
+      <SectionHeading
+        index="02"
+        label="Sectors"
+        title="Every tender, sorted by the kind of work"
+        action={
+          <ButtonLink to="/sectors" size="sm">
+            All sectors <ArrowRight className="size-3.5" aria-hidden="true" />
+          </ButtonLink>
+        }
+      >
+        Classified from each tender's title and the portal's own category, from road building to CCTV and lab equipment.
       </SectionHeading>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {(sectors.data ?? SECTORS.map((s) => ({ ...s, open: undefined, value_inr: null, description: "", closing_this_week: 0 })))
-          .filter((s) => s.slug !== "other")
-          .map((s) => (
-            <Link
-              key={s.slug}
-              to={`/tenders?sector=${s.slug}`}
-              className="group rounded-2xl border border-line bg-surface p-4 transition-all hover:-translate-y-0.5 hover:border-brand hover:shadow-lg hover:shadow-black/5 sm:p-5"
-            >
-              <span className="grid size-10 place-items-center rounded-xl bg-brand-soft text-brand">
-                <SectorIcon slug={s.slug} className="size-5" />
-              </span>
-              <p className="mt-4 font-semibold text-ink group-hover:text-brand">{sectorMeta(s.slug).label}</p>
-              <p className="mt-1 text-sm text-ink-2">
-                {s.open === undefined ? <Skeleton className="h-4 w-24" /> : <>{formatCount(s.open)} open · {formatInr(s.value_inr, { short: true })}</>}
-              </p>
-            </Link>
-          ))}
+      <div className="panel overflow-hidden">
+        {sectors.isLoading ? (
+          <div className="grid lg:grid-cols-2">
+            {Array.from({ length: 2 }, (_, c) => (
+              <div key={c} className="divide-y divide-line lg:[&:first-child]:border-r lg:[&:first-child]:border-line">
+                {Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} className="flex justify-between px-5 py-4">
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid lg:grid-cols-2">
+            <div className="border-b border-line lg:border-r lg:border-b-0">
+              <SectorTable rows={rows.slice(0, half)} max={max} />
+            </div>
+            <SectorTable rows={rows.slice(half)} max={max} />
+          </div>
+        )}
       </div>
-    </section>
+      <p className="mt-3 text-xs text-ink-3">Bars compare open tenders across sectors. Value is the sum of tenders that disclose one.</p>
+    </Section>
   );
 }
+
+// --- 03 Closing soon -------------------------------------------------------------------
 
 function ClosingSoon() {
   const q = useQuery({ queryKey: ["closing-soon"], queryFn: () => api.tenders({ ...DEFAULT_FILTERS, sort: "closing" }) });
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-6">
+    <Section>
       <SectionHeading
-        eyebrow="Don't miss these"
+        index="03"
+        label="Deadlines"
         title="Closing soon"
         action={
-          <Link to="/tenders?sort=closing" className="inline-flex items-center gap-1 text-sm font-semibold text-brand hover:underline">
-            See all <ArrowRight className="size-4" />
-          </Link>
+          <ButtonLink to="/tenders?sort=closing" size="sm">
+            See all <ArrowRight className="size-3.5" aria-hidden="true" />
+          </ButtonLink>
         }
-      />
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+      >
+        Bid submission closes on these first. Red means three days or less.
+      </SectionHeading>
+      <div className="panel overflow-hidden">
+        <TenderListHeader />
         {q.isLoading
-          ? Array.from({ length: 6 }, (_, i) => <TenderCardSkeleton key={i} />)
-          : q.data?.results.slice(0, 6).map((t) => <TenderCard key={t.id} t={t} compact />)}
+          ? Array.from({ length: 4 }, (_, i) => <TenderRowSkeleton key={i} />)
+          : q.data?.results.slice(0, 6).map((t) => <TenderRow key={t.id} t={t} />)}
       </div>
-    </section>
+    </Section>
+  );
+}
+
+// --- Alerts ----------------------------------------------------------------------------
+
+const EXAMPLE: AlertCriteria = { states: ["Chhattisgarh"], pin_prefixes: [], sectors: ["roads", "buildings"], keywords: "", min_value_inr: "1000000" };
+
+/** An example alert, written out like a config readout, with its live match count. */
+function AlertSpec() {
+  const preview = useQuery({ queryKey: ["alert-preview", EXAMPLE], queryFn: () => api.previewAlert(EXAMPLE), retry: false });
+  const rows: [string, ReactNode][] = [
+    ["Where", "Chhattisgarh, every PIN area"],
+    ["What", "Roads & Bridges, Buildings & Civil"],
+    ["Min value", "₹10 lakh"],
+    ["Send", "after every hourly crawl, only if new"],
+  ];
+  return (
+    <div className="panel ticks bg-surface/80 backdrop-blur-sm">
+      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+        <p className="num text-xs text-ink-2">alerts / roads-chhattisgarh</p>
+        <span className="label flex items-center gap-2 text-good">
+          <span className="live-dot" aria-hidden="true" /> Active
+        </span>
+      </div>
+      <dl className="divide-y divide-line">
+        {rows.map(([k, v]) => (
+          <div key={k} className="grid grid-cols-[92px_1fr] gap-4 px-4 py-3">
+            <dt className="label pt-0.5">{k}</dt>
+            <dd className="num text-[13px] text-ink">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {preview.data && (
+        <div className="flex items-baseline justify-between gap-4 border-t border-line bg-surface-2/60 px-4 py-3">
+          <span className="label">Matching now</span>
+          <span className="num text-ink">
+            <span className="text-xl font-medium text-signal-text">{formatCount(preview.data.count)}</span> <span className="text-xs text-ink-3">open tenders</span>
+          </span>
+        </div>
+      )}
+    </div>
   );
 }
 
 function AlertsCta() {
+  // Always a dark stage, on both themes: the .dark class swaps the tokens inside it.
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-6">
-      <div className="relative overflow-hidden rounded-3xl bg-brand px-6 py-10 text-brand-ink sm:px-12 sm:py-14">
-        <div className="relative z-10 grid items-center gap-8 lg:grid-cols-[1.4fr_1fr]">
-          <div>
-            <p className="inline-flex items-center gap-2 text-sm font-semibold opacity-90">
-              <Bell className="size-4" /> Email alerts
-            </p>
-            <h2 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Hear about tenders in your area first.</h2>
-            <p className="mt-3 max-w-xl opacity-90">
-              Pick a state, a PIN area like Bhilai (490xxx), and the kind of work you do. We email you after every hourly crawl when something new opens. One click to unsubscribe.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3 lg:justify-end">
-            <Link to="/alerts" className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 font-semibold text-[#0d366b] hover:bg-white/90">
-              Create a free alert <ArrowRight className="size-4" />
-            </Link>
+    <section>
+      <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="dark relative overflow-hidden rounded-lg border border-line bg-bg text-ink">
+          <InterfaceLines density={0.9} className="[mask-image:linear-gradient(to_right,transparent,black_45%)]" />
+          <div
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(55%_80%_at_88%_0%,color-mix(in_srgb,var(--signal)_13%,transparent),transparent_70%)]"
+            aria-hidden="true"
+          />
+          <div className="relative grid gap-10 p-6 sm:p-10 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-16 lg:p-14">
+            <div>
+              <p className="eyebrow">Email alerts</p>
+              <h2 className="mt-5 text-3xl font-semibold sm:text-[40px] sm:leading-[1.08]">Hear about tenders in your area first.</h2>
+              <p className="mt-4 max-w-lg text-ink-2">
+                Choose states, PIN areas and the kind of work you do. After each hourly crawl we email only what is new, so nothing closes before you see it.
+              </p>
+              <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
+                <ButtonLink variant="primary" size="lg" to="/alerts">
+                  Create a free alert <ArrowRight className="size-4" aria-hidden="true" />
+                </ButtonLink>
+                <span className="text-sm text-ink-3">Free. One click to unsubscribe.</span>
+              </div>
+            </div>
+            <AlertSpec />
           </div>
         </div>
-        <div className="absolute -top-24 -right-24 size-80 rounded-full bg-white/10" aria-hidden="true" />
-        <div className="absolute -bottom-32 left-1/3 size-72 rounded-full bg-white/5" aria-hidden="true" />
       </div>
     </section>
   );
 }
 
-function PrivateTeaser() {
+// --- 04 Coverage -----------------------------------------------------------------------
+
+/** The portals in the index with their live open-tender counts, straight from /api/sources. */
+function SourceList() {
+  const sources = useSources();
+  const rows = (sources.data ?? []).filter((s) => s.enabled).sort((a, b) => b.open_tenders - a.open_tenders);
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-20 sm:px-6">
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="p-6 sm:p-8">
-          <span className="grid size-10 place-items-center rounded-xl bg-brand-soft text-brand">
-            <Briefcase className="size-5" />
-          </span>
-          <h3 className="mt-4 text-xl font-bold text-ink">Government tenders</h3>
-          <p className="mt-2 text-ink-2">Live now: central ministries, PSUs, AIIMS, IITs, defence and state portals, refreshed every hour.</p>
-          <Link to="/tenders" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-brand hover:underline">
-            Explore government tenders <ArrowRight className="size-4" />
-          </Link>
-        </Card>
-        <Card className="relative overflow-hidden p-6 sm:p-8">
-          <span className="absolute top-5 right-5 rounded-full bg-brand-soft px-2.5 py-1 text-xs font-semibold text-brand">Coming soon</span>
-          <span className="grid size-10 place-items-center rounded-xl bg-surface-2 text-ink-2">
-            <Sparkles className="size-5" />
-          </span>
-          <h3 className="mt-4 text-xl font-bold text-ink">Private tenders</h3>
-          <p className="mt-2 text-ink-2">RFQs and RFPs from private companies, in the same search and alerts. Join the waitlist to hear when it launches.</p>
-          <Link to="/private" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-brand hover:underline">
-            Join the waitlist <ArrowRight className="size-4" />
-          </Link>
-        </Card>
+    <div className="bg-surface p-6 sm:p-8">
+      <p className="label">Portals indexed</p>
+      {sources.isLoading ? (
+        <div className="mt-5 space-y-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-4 w-full" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="mt-5 text-sm text-ink-3">The source list is unavailable right now.</p>
+      ) : (
+        <ul className="mt-4 divide-y divide-line">
+          {rows.slice(0, 5).map((s) => (
+            <li key={s.key} className="flex items-baseline justify-between gap-4 py-2.5 text-sm">
+              <a href={s.url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-ink-2 hover:text-ink">
+                {s.name} <span aria-hidden="true">↗</span>
+              </a>
+              <span className="num shrink-0 text-ink">{formatCount(s.open_tenders)} open</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link to="/coverage" className={cx(textLink, "mt-6")}>
+        {rows.length > 5 ? `All ${formatCount(rows.length)} portals` : "Coverage and attribution"} <ArrowRight className="size-3.5" aria-hidden="true" />
+      </Link>
+    </div>
+  );
+}
+
+// --- Product: find, understand, manage -------------------------------------------------
+
+const PILLARS = [
+  {
+    icon: Search,
+    title: "Find",
+    body: "One search and one map across central and state portals, with email alerts the hour something new opens.",
+    to: "/tenders",
+    cta: "Explore tenders",
+  },
+  {
+    icon: ScanText,
+    title: "Understand",
+    body: "Upload the NIT and BOQ. Get the bid brief, an eligibility check against your company profile, and answers with page citations.",
+    to: "/copilot",
+    cta: "Open the Copilot",
+  },
+  {
+    icon: KanbanSquare,
+    title: "Manage",
+    body: "Track bids from watching to won with your team, see what closes this week, and export to CSV or OCDS.",
+    to: "/pipeline",
+    cta: "See the pipeline",
+  },
+];
+
+function Product() {
+  return (
+    <Section rule={false}>
+      <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-3">
+        {PILLARS.map(({ icon: Icon, title, body, to, cta }) => (
+          <div key={title} className="bg-surface p-6 sm:p-7">
+            <Icon className="size-5 text-signal-text" aria-hidden="true" />
+            <h3 className="mt-4 text-lg font-semibold text-ink">{title}</h3>
+            <p className="mt-2 text-sm leading-relaxed text-ink-2">{body}</p>
+            <Link to={to} className={cx(textLink, "mt-5")}>
+              {cta} <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
+          </div>
+        ))}
       </div>
-      <p className="mt-6 flex items-center gap-2 text-xs text-ink-3">
-        <Clock className="size-3.5" aria-hidden="true" /> Crawled every hour from public pages, at one request per second.
+      <p className="mt-4 text-sm text-ink-3">
+        Free to search and set alerts.{" "}
+        <Link to="/pricing" className="text-ink-2 underline decoration-line-strong underline-offset-4 hover:text-ink">
+          Plans for teams
+        </Link>
       </p>
-    </section>
+    </Section>
+  );
+}
+
+function Coverage() {
+  return (
+    <Section className="[&>div]:pb-0">
+      <SectionHeading index="04" label="Coverage" title="What is in the index" />
+      <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-2">
+        <div className="bg-surface p-6 sm:p-8">
+          <Tag tone="good">
+            <span className="live-dot" aria-hidden="true" /> Live
+          </Tag>
+          <h3 className="mt-5 text-xl font-semibold text-ink">Government tenders</h3>
+          <p className="mt-2 max-w-md text-ink-2">Central ministries, PSUs, AIIMS, IITs, defence and state portals, refreshed every hour.</p>
+          <Link to="/tenders" className={cx(textLink, "mt-6")}>
+            Explore government tenders <ArrowRight className="size-3.5" aria-hidden="true" />
+          </Link>
+        </div>
+        <SourceList />
+      </div>
+      <p className="num mt-4 text-xs text-ink-3">
+        Crawled from public pages · one request per second · documents stay on the portal · always confirm on the official portal
+      </p>
+    </Section>
   );
 }
 
@@ -354,11 +561,13 @@ export default function Home() {
   return (
     <>
       <Hero />
+      <Readout />
+      <Product />
       <MapSection />
       <SectorsSection />
       <ClosingSoon />
       <AlertsCta />
-      <PrivateTeaser />
+      <Coverage />
     </>
   );
 }

@@ -1,8 +1,10 @@
 name: crawl
 # Scheduled crawls for the Vercel deployment, which has no Celery worker or beat.
 # Like CELERY_BEAT_SCHEDULE in config/settings.py, but the full crawl is weekly and old rows
-# are pruned after every run, so the data fits a free 0.5 GB Postgres. A full crawl stores
-# ~63 MB of detail pages and an incremental one ~5 MB of listing pages and ~2,700 crawl items.
+# are pruned before and after every run, so the data fits a free 0.5 GB Postgres. A full
+# crawl keeps detail pages only for new or changed tenders (re-fetching every unchanged one
+# once filled the database), and an incremental one stores ~5 MB of listing pages and
+# ~2,700 crawl items.
 on:
   schedule:
     - cron: "35 * * * *" # hourly incremental (:05 IST)
@@ -32,7 +34,7 @@ jobs:
       SITE_URL: ${{ vars.SITE_URL }}
       CRAWLER_SOURCES: ${{ vars.CRAWLER_SOURCES || 'central,mp' }}
       RAW_LISTING_RETENTION_DAYS: "0" # only needed during the run
-      RAW_DETAIL_RETENTION_DAYS: "2" # pages behind stored tenders are always kept
+      RAW_DETAIL_RETENTION_DAYS: "0" # pages behind stored tenders are always kept; unchanged re-fetches are not
       CRAWL_ITEM_RETENTION_DAYS: "7" # run totals stay on crawl_run
       MODE: ${{ inputs.mode || (github.event.schedule == '0 21 * * 6' && 'full') || 'incremental' }}
     steps:
@@ -52,6 +54,10 @@ jobs:
       - if: steps.cfg.outputs.skip != 'true'
         run: uv run python manage.py migrate --noinput
       - if: steps.cfg.outputs.skip != 'true'
+        name: Prune old rows
+        # Also before the crawl, so a database that hit its size limit frees space first.
+        run: uv run python manage.py prune
+      - if: steps.cfg.outputs.skip != 'true'
         name: Crawl
         run: |
           status=0
@@ -62,9 +68,5 @@ jobs:
           done
           exit $status
       - if: always() && steps.cfg.outputs.skip != 'true'
-        name: Prune old rows
-        run: |
-          uv run python manage.py shell -c "
-          from ingest import tasks
-          print('raw pages deleted:', tasks.prune_raw_pages())
-          print('crawl items deleted:', tasks.prune_crawl_items())"
+        name: Prune old rows after the crawl
+        run: uv run python manage.py prune

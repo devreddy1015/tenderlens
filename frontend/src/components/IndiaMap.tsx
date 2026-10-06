@@ -132,27 +132,27 @@ export function IndiaMap({
 
       {hover && (
         <div
-          className="pointer-events-none absolute z-10 w-56 -translate-x-1/2 -translate-y-[calc(100%+14px)] rounded-xl border border-line bg-surface p-3 text-sm shadow-xl shadow-black/10"
+          className="pointer-events-none absolute z-10 w-56 -translate-x-1/2 -translate-y-[calc(100%+14px)] rounded-md border border-line-strong bg-surface p-3 text-sm shadow-panel"
           style={{ left: Math.min(Math.max(hover.x, 112), (box.current?.clientWidth ?? 0) - 112), top: hover.y }}
           role="tooltip"
         >
-          <p className="font-semibold text-ink">{hover.name}</p>
+          <p className="font-medium text-ink">{hover.name}</p>
           {hovered ? (
-            <dl className="mt-1.5 space-y-1 text-ink-2">
+            <dl className="mt-2 space-y-1 border-t border-line pt-2 text-ink-2">
               <div className="flex justify-between gap-3">
                 <dt>Open tenders</dt>
-                <dd className="font-semibold text-ink tabular-nums">{formatCount(hovered.open)}</dd>
+                <dd className="num font-medium text-ink">{formatCount(hovered.open)}</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt>Closing in 7 days</dt>
-                <dd className="tabular-nums text-ink">{formatCount(hovered.closing_this_week)}</dd>
+                <dd className="num text-ink">{formatCount(hovered.closing_this_week)}</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt>Disclosed value</dt>
-                <dd className="tabular-nums text-ink">{formatInr(hovered.value_inr, { short: true })}</dd>
+                <dd className="num text-ink">{formatInr(hovered.value_inr, { short: true })}</dd>
               </div>
               {hovered.top_sector && (
-                <div className="flex items-center gap-1.5 pt-1 text-xs">
+                <div className="flex items-center gap-1.5 pt-1 text-xs text-ink-3">
                   <SectorIcon slug={hovered.top_sector} className="size-3.5" />
                   Mostly {sectorMeta(hovered.top_sector).label}
                 </div>
@@ -177,16 +177,16 @@ function MapLegend({ breaks, steps, metric }: { breaks: number[]; steps: string[
     return hi === null ? `${formatCount(lo)}+` : lo === hi ? formatCount(lo) : `${formatCount(lo)}–${formatCount(hi)}`;
   });
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-2" aria-label="Map legend">
-      <span className="font-medium text-ink">{metric === "open" ? "Open tenders" : "Closing in 7 days"}</span>
+    <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-ink-2" aria-label="Map legend">
+      <span className="label mr-1">{metric === "open" ? "Open tenders" : "Closing in 7 days"}</span>
       <span className="flex items-center gap-1.5">
-        <span className="size-3 rounded-sm border border-line" style={{ background: "var(--map-empty)" }} />
+        <span className="size-2.5 rounded-[2px] border border-line-strong" style={{ background: "var(--map-empty)" }} />
         None
       </span>
       {steps.map((s, i) => (
         <span key={s} className="flex items-center gap-1.5">
-          <span className="size-3 rounded-sm" style={{ background: s }} />
-          <span className="tabular-nums">{ranges[i]}</span>
+          <span className="size-2.5 rounded-[2px]" style={{ background: s }} />
+          <span className="num">{ranges[i]}</span>
         </span>
       ))}
     </div>
