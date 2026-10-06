@@ -1,7 +1,29 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type BidStatus, type BidTrack, type BidTrackPatch, errorMessage, type Source } from "./api";
+import { keepPreviousData, type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, type BidStatus, type BidTrack, type BidTrackPatch, errorMessage, quotaExceeded, type Source, type Workspace } from "./api";
 import { useAuth } from "./auth";
 import { useToast } from "./toast";
+
+/** Everything that belongs to the active workspace. Switching, joining or leaving one makes
+ *  it all stale; "plans" and public data stay. */
+export const WORKSPACE_KEYS = [
+  "workspace",
+  "workspaces",
+  "members",
+  "invites",
+  "api-keys",
+  "pipeline",
+  "pipeline-summary",
+  "subscription",
+  "copilot",
+  "alerts",
+  "recommendations",
+];
+
+/** Drop the old workspace's data; with `next`, seed the new workspace at once. */
+export function resetWorkspaceData(qc: QueryClient, next?: Workspace) {
+  qc.removeQueries({ predicate: (q) => WORKSPACE_KEYS.includes(String(q.queryKey[0])) });
+  if (next && typeof next === "object" && "plan" in next) qc.setQueryData(["workspace"], next);
+}
 
 /** Shared queries for signed-in data. Keys listed in PRIVATE_KEYS (auth.tsx) are dropped on sign-out. */
 
@@ -22,6 +44,23 @@ export function useSubscription() {
 export function usePipeline() {
   const signedIn = useSignedIn();
   return useQuery({ queryKey: ["pipeline"], queryFn: () => api.pipeline.list(), enabled: signedIn });
+}
+
+/** The organisations the user belongs to, for the switcher in the account menu. */
+export function useWorkspaces(enabled = true) {
+  const signedIn = useSignedIn();
+  return useQuery({ queryKey: ["workspaces"], queryFn: api.workspace.list, enabled: signedIn && enabled, staleTime: 60_000 });
+}
+
+/** Open tenders matched to the company profile ("Recommended for you"). */
+export function useRecommendations(page = 1, enabled = true) {
+  const signedIn = useSignedIn();
+  return useQuery({
+    queryKey: ["recommendations", page],
+    queryFn: () => api.recommendations(page),
+    enabled: signedIn && enabled,
+    placeholderData: keepPreviousData,
+  });
 }
 
 export function usePipelineSummary() {
@@ -76,9 +115,12 @@ export function useTrack() {
       qc.setQueryData<BidTrack[]>(["pipeline"], (rows) => rows && [...rows.filter((r) => r.id !== track.id), track]);
       qc.invalidateQueries({ queryKey: ["pipeline"] });
       qc.invalidateQueries({ queryKey: ["pipeline-summary"] });
+      // Recommendations leave out tenders already in the pipeline.
+      qc.invalidateQueries({ queryKey: ["recommendations"] });
       toast("success", "Added to your bid pipeline");
     },
-    onError: (e) => toast("error", errorMessage(e, "Couldn't add it to the pipeline")),
+    // A 402 opens the upgrade dialog (see lib/upgrade.ts); anything else is a toast.
+    onError: (e) => quotaExceeded(e) || toast("error", errorMessage(e, "Couldn't add it to the pipeline")),
   });
 }
 

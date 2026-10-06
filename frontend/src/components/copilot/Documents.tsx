@@ -192,7 +192,18 @@ export function DocumentList({
     );
   }
   if (!docs?.length) return <p className="rounded-md border border-line px-3 py-3 text-sm text-ink-3">{empty}</p>;
+  const reading = docs.filter((d) => d.status === "processing").length;
   return (
+    <div>
+    <p className="sr-only" role="status" aria-live="polite">
+      {reading ? `Reading ${reading} document${reading === 1 ? "" : "s"}.` : ""}
+    </p>
+    {reading > 0 && (
+      <p className="mb-2 flex items-center gap-2 text-xs text-ink-3" aria-hidden="true">
+        <Loader2 className="size-3.5 animate-spin text-signal-text" />
+        Reading {reading} document{reading === 1 ? "" : "s"}: text, OCR for scanned pages, then passages. This list updates by itself.
+      </p>
+    )}
     <ul className="divide-y divide-line rounded-md border border-line bg-surface">
       {docs.map((d) => (
         <li key={d.id} className="px-3 py-2.5">
@@ -250,5 +261,6 @@ export function DocumentList({
         </li>
       ))}
     </ul>
+    </div>
   );
 }

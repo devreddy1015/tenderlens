@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { IndiaMap } from "../components/IndiaMap";
 import { InterfaceLines } from "../components/InterfaceLines";
+import { RecommendedSection } from "../components/Recommended";
 import { StatePanel, TopStates } from "../components/StatePanel";
 import { TenderListHeader, TenderRow, TenderRowSkeleton } from "../components/TenderCard";
 import { Button, ButtonLink, cx, SectionHeading, Skeleton, Stat, Tag } from "../components/ui";
@@ -11,7 +12,7 @@ import { type AlertCriteria, api, DEFAULT_FILTERS, type SectorStat, type Source 
 import { formatCount, formatInr, timeAgo } from "../lib/format";
 import { useSources } from "../lib/queries";
 import { SectorIcon, sectorMeta } from "../lib/sectors";
-import { latestRun } from "../lib/sources";
+import { latestSuccess } from "../lib/sources";
 
 const QUICK = ["roads", "buildings", "electrical", "it", "security", "health"];
 
@@ -52,7 +53,7 @@ function LiveProof() {
   const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats });
   const sources = useSources();
   const portals = sources.data?.filter((s) => s.enabled).length;
-  const crawled = latestRun(sources.data) ?? stats.data?.last_crawl?.finished;
+  const crawled = latestSuccess(sources.data) ?? stats.data?.last_crawl?.finished;
   const parts = [
     stats.data && `${formatCount(stats.data.open_tenders)} open tenders`,
     portals ? `${formatCount(portals)} ${portals === 1 ? "portal" : "portals"} indexed` : null,
@@ -562,6 +563,7 @@ export default function Home() {
     <>
       <Hero />
       <Readout />
+      <RecommendedSection />
       <Product />
       <MapSection />
       <SectorsSection />

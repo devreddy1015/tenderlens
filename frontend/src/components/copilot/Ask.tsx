@@ -16,6 +16,10 @@ function TurnView({ t }: { t: Turn }) {
   const text = f ? f.answer : t.draft;
   const cited = f?.citations.find((c) => c.n === open);
   const toggle = (n: number) => setOpen(open === n ? null : n);
+  // A citation marker in the answer jumps to its quote, which can be far below on a phone.
+  useEffect(() => {
+    if (open !== null) document.getElementById(`${base}-quote`)?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [open, base]);
 
   return (
     <li>

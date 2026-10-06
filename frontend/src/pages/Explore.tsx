@@ -1,11 +1,15 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Bell, ChevronLeft, ChevronRight, Info, Search, SearchX, SlidersHorizontal, X } from "lucide-react";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { Bell, ChevronLeft, ChevronRight, Download, Info, Search, SearchX, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import { RecommendedList } from "../components/Recommended";
+import { SignInDialog } from "../components/SignIn";
 import { TenderListHeader, TenderRow, TenderRowSkeleton } from "../components/TenderCard";
 import { Button, ButtonLink, cx, EmptyState, inputBase, inputClass, PageHeader } from "../components/ui";
-import { api, type Bucket, type Filters, filtersFromParams, filtersToParams, PAGE_SIZE, VALUE_RANGES } from "../lib/api";
+import { api, type Bucket, type CsvExport, errorMessage, type Filters, filtersFromParams, filtersToParams, PAGE_SIZE, quotaExceeded, VALUE_RANGES } from "../lib/api";
 import { formatCount } from "../lib/format";
+import { useSignedIn } from "../lib/queries";
+import { useToast } from "../lib/toast";
 import { SectorIcon, sectorMeta } from "../lib/sectors";
 
 const SORT_LABELS: Record<Filters["sort"], string> = {
@@ -179,9 +183,76 @@ function Notice({ children, tone = "neutral" }: { children: React.ReactNode; ton
   );
 }
 
+type View = "all" | "recommended";
+
+function ViewTabs({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+  const tabs: { v: View; label: React.ReactNode }[] = [
+    { v: "all", label: "All tenders" },
+    {
+      v: "recommended",
+      label: (
+        <>
+          <Sparkles className="size-3.5 text-signal-text" aria-hidden="true" /> Recommended for you
+        </>
+      ),
+    },
+  ];
+  return (
+    <div
+      role="tablist"
+      aria-label="Which tenders"
+      className="mt-6 flex gap-1 border-b border-line"
+      onKeyDown={(e) => {
+        // Arrow keys move between tabs (WAI-ARIA tabs pattern); Tab leaves the list.
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        const next = tabs[(tabs.findIndex((t) => t.v === view) + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length].v;
+        onChange(next);
+        requestAnimationFrame(() => document.getElementById(`view-tab-${next}`)?.focus());
+      }}
+    >
+      {tabs.map((t) => (
+        <button
+          key={t.v}
+          id={`view-tab-${t.v}`}
+          type="button"
+          role="tab"
+          aria-selected={view === t.v}
+          tabIndex={view === t.v ? 0 : -1}
+          onClick={() => onChange(t.v)}
+          className={cx(
+            "-mb-px inline-flex items-center gap-1.5 border-b px-3 py-2.5 text-sm transition-colors",
+            view === t.v ? "border-signal font-medium text-ink" : "border-transparent text-ink-3 hover:text-ink",
+          )}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** CSV of the current search (plan feature "export"). A 402 opens the upgrade dialog. */
+function useCsvExport(onTruncated: (r: CsvExport | null) => void) {
+  const toast = useToast();
+  return useMutation({
+    mutationFn: (f: Filters) => api.exports.downloadCsv(f),
+    onSuccess: (r) => {
+      onTruncated(r.truncated ? r : null);
+      toast("success", r.truncated ? `Exported the first ${formatCount(r.rows)} of ${formatCount(r.total)} tenders` : `Exported ${formatCount(r.total)} tenders`);
+    },
+    onError: (e) => quotaExceeded(e) || toast("error", errorMessage(e, "Couldn't export the tenders")),
+  });
+}
+
 export default function Explore() {
   const [params, setParams] = useSearchParams();
   const f = useMemo(() => filtersFromParams(params), [params]);
+  const signedIn = useSignedIn();
+  const view: View = signedIn && params.get("view") === "recommended" ? "recommended" : "all";
+  const [truncated, setTruncated] = useState<CsvExport | null>(null);
+  const [signIn, setSignIn] = useState(false);
+  const csv = useCsvExport(setTruncated);
   const [text, setText] = useState(f.q);
   const debounced = useDebounced(text, 350);
   const [drawer, setDrawer] = useState(false);
@@ -202,7 +273,8 @@ export default function Explore() {
     return () => document.removeEventListener("keydown", onKey);
   }, [drawer]);
 
-  const q = useQuery({ queryKey: ["tenders", f], queryFn: ({ signal }) => api.tenders(f, signal), placeholderData: keepPreviousData });
+  const q = useQuery({ queryKey: ["tenders", f], queryFn: ({ signal }) => api.tenders(f, signal), placeholderData: keepPreviousData, enabled: view === "all" });
+  const switchView = (v: View) => setParams(v === "recommended" ? new URLSearchParams({ view: "recommended" }) : filtersToParams({ ...f, page: 1 }));
   const buyer = useQuery({ queryKey: ["buyer", f.buyer], queryFn: () => api.buyer(Number(f.buyer)), enabled: !!f.buyer });
   const pages = q.data ? Math.max(1, Math.ceil(q.data.count / PAGE_SIZE)) : 1;
 
@@ -230,18 +302,35 @@ export default function Explore() {
         title="Tenders"
         actions={
           <>
-            <div className="mr-3 text-right" aria-live="polite">
-              <p className="label">{f.includeClosed ? "Results" : "Open now"}</p>
-              <p className="num mt-1 text-2xl font-medium text-ink">{q.data ? formatCount(q.data.count) : "—"}</p>
-            </div>
-            <ButtonLink to={alertHref}>
-              <Bell className="size-4" aria-hidden="true" /> Alert me about these
-            </ButtonLink>
+            {view === "all" && (
+              <>
+                <div className="mr-3 text-right" aria-live="polite">
+                  <p className="label">{f.includeClosed ? "Results" : "Open now"}</p>
+                  <p className="num mt-1 text-2xl font-medium text-ink">{q.data ? formatCount(q.data.count) : "—"}</p>
+                </div>
+                <Button onClick={() => (signedIn ? csv.mutate(f) : setSignIn(true))} disabled={csv.isPending} title="Download these results as a spreadsheet (CSV)">
+                  <Download className="size-4" aria-hidden="true" /> {csv.isPending ? "Exporting…" : "Export CSV"}
+                </Button>
+                <ButtonLink to={alertHref}>
+                  <Bell className="size-4" aria-hidden="true" /> Alert me about these
+                </ButtonLink>
+              </>
+            )}
           </>
         }
       >
         Search titles, buyers, locations or a tender ID. Typos and partial words are fine.
       </PageHeader>
+      <SignInDialog open={signIn} onClose={() => setSignIn(false)} title="Sign in to export tenders">
+        Exports come with the paid plans. Sign in to see yours.
+      </SignInDialog>
+      {signedIn && <ViewTabs view={view} onChange={switchView} />}
+      {view === "recommended" ? (
+        <div className="mt-6">
+          <RecommendedList page={f.page} onPage={(page) => setParams(new URLSearchParams({ view: "recommended", ...(page > 1 ? { page: String(page) } : {}) }))} />
+        </div>
+      ) : (
+      <>
 
       <div className="sticky top-14 z-20 -mx-4 border-b border-line bg-bg/90 px-4 py-3 backdrop-blur-md sm:mx-0 sm:px-0">
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -321,6 +410,11 @@ export default function Explore() {
             )}
           </div>
 
+          {truncated && (
+            <Notice tone="signal">
+              The export holds the first {formatCount(truncated.rows)} of {formatCount(truncated.total)} matching tenders. Narrow the filters to export the rest.
+            </Notice>
+          )}
           {q.data?.relaxed && <Notice tone="signal">No tender matched every word, so these match some of them.</Notice>}
           {buyer.data && buyer.data.aliases.length > 1 && (
             <Notice>
@@ -363,7 +457,10 @@ export default function Explore() {
         </div>
       </div>
 
-      {drawer && (
+      </>
+      )}
+
+      {drawer && view === "all" && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Filters">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={() => setDrawer(false)} />
           <div className="absolute inset-y-0 right-0 flex w-[min(88vw,360px)] flex-col border-l border-line bg-bg">

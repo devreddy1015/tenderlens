@@ -80,6 +80,20 @@ function Meta({ t }: { t: Tender }) {
   );
 }
 
+/** Why a recommended tender matched the company profile, as small chips. */
+export function ReasonChips({ reasons, className }: { reasons: string[]; className?: string }) {
+  if (!reasons.length) return null;
+  return (
+    <ul className={cx("relative z-10 flex flex-wrap gap-1", className)} aria-label="Why it matches your profile">
+      {reasons.map((r) => (
+        <li key={r} className="tag tag-signal h-5 px-1.5 text-[11px]">
+          {r}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Column heads for a list of TenderRows, on wide screens. */
 export function TenderListHeader() {
   return (
@@ -92,7 +106,7 @@ export function TenderListHeader() {
 }
 
 /** One tender as a dense, scannable row: what and who, how much, how long left. */
-export function TenderRow({ t }: { t: Tender }) {
+export function TenderRow({ t, reasons }: { t: Tender; reasons?: string[] }) {
   const signedIn = useSignedIn();
   return (
     <article className="group relative grid grid-cols-[1fr_auto] gap-x-6 gap-y-3 border-b border-line px-4 py-4 transition-colors last:border-b-0 hover:bg-surface-2/60 sm:px-5 md:grid-cols-[1fr_130px_150px]">
@@ -105,6 +119,7 @@ export function TenderRow({ t }: { t: Tender }) {
           </Link>
         </h3>
         <p className="mt-1 line-clamp-1 text-sm text-ink-2">{t.buyer?.canonical_name ?? t.buyer_raw}</p>
+        {reasons && <ReasonChips reasons={reasons} className="mt-2" />}
         {/* Wrappers, because a display utility on CopyId itself would clash with its inline-flex. */}
         <div className={cx("relative z-10 mt-1.5 -ml-1 items-center gap-2", signedIn ? "flex" : "hidden md:flex")}>
           <span className="hidden md:block">
@@ -137,7 +152,7 @@ export function TenderRowSkeleton() {
 }
 
 /** A tender in a grid cell, for related or featured tenders. */
-export function TenderCard({ t }: { t: Tender }) {
+export function TenderCard({ t, reasons }: { t: Tender; reasons?: string[] }) {
   return (
     <article className="panel group relative flex flex-col p-4 transition-colors hover:border-line-strong">
       <div className="flex items-start justify-between gap-2">
@@ -150,6 +165,7 @@ export function TenderCard({ t }: { t: Tender }) {
         </Link>
       </h3>
       <p className="mt-1 line-clamp-1 text-sm text-ink-2">{t.buyer?.canonical_name ?? t.buyer_raw}</p>
+      {reasons && <ReasonChips reasons={reasons} className="mt-2.5" />}
       <div className="min-h-4 flex-1" aria-hidden="true" />
       <div className="flex items-end justify-between gap-3 border-t border-line pt-3">
         <div>

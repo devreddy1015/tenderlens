@@ -4,27 +4,102 @@ import { Card, cx, EmptyState, PageHeader, Segmented, Skeleton, Stat, Tag } from
 import { errorMessage, type Source } from "../lib/api";
 import { formatCount, formatDate, timeAgo } from "../lib/format";
 import { useSources } from "../lib/queries";
-import { KIND_LABEL, latestRun, runTone } from "../lib/sources";
+import { freshness, groupSources, KIND_LABEL, latestSuccess, runTone, STALE_HOURS } from "../lib/sources";
 
 type Kind = Source["kind"];
 
-function LastRun({ s }: { s: Source }) {
+const FRESH_LABEL = { fresh: "Fresh", stale: "Stale", never: "Not crawled yet" } as const;
+
+/** The freshness we promise: when the last successful crawl finished, plus the newest run
+ *  when it differs (running now, or failed since). */
+function Freshness({ s }: { s: Source }) {
+  const f = freshness(s);
   const r = s.last_run;
-  if (!r) return <span className="text-ink-3">Not crawled yet</span>;
+  const lastFailed = r && runTone(r.status) === "critical";
+  const running = r && !r.finished;
   return (
-    <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Tag tone={runTone(r.status)} className="h-5 px-1.5 text-[11px]">
-          {r.status || "unknown"}
+    <div className="min-w-0">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Tag tone={f === "fresh" ? "good" : f === "stale" ? "critical" : undefined} className="h-5 px-1.5 text-[11px]">
+          {FRESH_LABEL[f]}
         </Tag>
-        <span className="num text-xs text-ink-2" title={formatDate(r.finished)}>
-          {r.finished ? timeAgo(r.finished) : "in progress"}
-        </span>
-      </div>
-      <p className="num mt-1 text-[11px] text-ink-3">
-        +{formatCount(r.new)} new · {formatCount(r.updated)} updated
+        {s.last_success && (
+          <span className="num text-xs text-ink-2" title={formatDate(s.last_success)}>
+            {timeAgo(s.last_success)}
+          </span>
+        )}
       </p>
+      {running ? (
+        <p className="num mt-1 text-[11px] text-signal-text">Crawling now</p>
+      ) : lastFailed ? (
+        <p className="num mt-1 text-[11px] text-critical">Last attempt {r.status} {r.finished ? timeAgo(r.finished) : ""}</p>
+      ) : r ? (
+        <p className="num mt-1 text-[11px] text-ink-3">
+          +{formatCount(r.new)} new · {formatCount(r.updated)} updated
+        </p>
+      ) : null}
     </div>
+  );
+}
+
+const COLS = "md:grid-cols-[minmax(0,1fr)_96px_110px_190px]";
+
+function PortalRows({ title, hint, rows, loading }: { title: string; hint: string; rows: Source[]; loading: boolean }) {
+  const id = `portals-${title.replace(/\W+/g, "-").toLowerCase()}`;
+  return (
+    <section className="mt-8" aria-labelledby={id}>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h3 id={id} className="font-medium text-ink">
+          {title} <span className="num ml-1 text-sm font-normal text-ink-3">{loading ? "" : rows.length}</span>
+        </h3>
+        <p className="text-xs text-ink-3">{hint}</p>
+      </div>
+      <Card className="overflow-hidden">
+        <div className={cx("label hidden gap-x-5 border-b border-line px-5 py-2.5 md:grid", COLS)} aria-hidden="true">
+          <span>Portal</span>
+          <span className="text-right">Open tenders</span>
+          <span>Schedule</span>
+          <span>Last successful crawl</span>
+        </div>
+        <ul className="divide-y divide-line">
+          {loading
+            ? Array.from({ length: 4 }, (_, i) => (
+                <li key={i} className="px-5 py-4">
+                  <Skeleton className="h-4 w-full" />
+                </li>
+              ))
+            : rows.map((s) => (
+                <li key={s.key} className={cx("grid grid-cols-[minmax(0,1fr)_auto] gap-x-5 gap-y-2 px-4 py-3.5 sm:px-5", COLS, !s.enabled && "opacity-70")}>
+                  <div className="min-w-0">
+                    <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 font-medium text-ink decoration-line-strong underline-offset-4 hover:underline">
+                      <span className="truncate">{s.name}</span> <ArrowUpRight className="size-3.5 shrink-0 text-ink-3" aria-hidden="true" />
+                    </a>
+                    <p className="mt-0.5 text-xs text-ink-3">
+                      {s.state ?? "All India"} · {KIND_LABEL[s.kind] ?? s.kind}
+                    </p>
+                  </div>
+                  <p className="num text-right text-ink">
+                    {formatCount(s.open_tenders)}
+                    <span className="block text-[11px] text-ink-3 md:hidden">open</span>
+                  </p>
+                  <p className="col-span-2 text-xs md:col-span-1 md:pt-0.5">
+                    {s.enabled ? (
+                      <span className="inline-flex items-center gap-2 text-ink-2">
+                        <span className="live-dot" aria-hidden="true" /> Hourly + nightly
+                      </span>
+                    ) : (
+                      <span className="text-ink-3">Paused</span>
+                    )}
+                  </p>
+                  <div className="col-span-2 md:col-span-1">
+                    <Freshness s={s} />
+                  </div>
+                </li>
+              ))}
+          {!loading && rows.length === 0 && <li className="px-5 py-6 text-center text-sm text-ink-3">No portals of this kind yet.</li>}
+        </ul>
+      </Card>
+    </section>
   );
 }
 
@@ -48,7 +123,8 @@ const RULES = [
 
 const NOT_CRAWLED = [
   { name: "IREPS (Indian Railways)", why: "Its robots.txt disallows all crawling, so railway tenders aren't here. Search them on IREPS directly." },
-  { name: "GeM bid data", why: "We read only the public listing pages GeM's robots.txt allows. Data behind its server-side protections is left alone." },
+  { name: "GeM bids", why: "GeM's bid data sits behind server-side protections we don't work around. The route to it is GeM's own data-sharing programme." },
+  { name: "Award results", why: "Every public results page (GePNIC “Results of Tenders”, CPPP “Result of Tenders”) needs a CAPTCHA before it shows a row, so we don't collect who won." },
   { name: "CPPP “latest active tenders”", why: "That list sits behind a CAPTCHA. We use the portals' public organisation-wise listings instead." },
 ];
 
@@ -57,23 +133,31 @@ export default function Coverage() {
   const [kind, setKind] = useState<"all" | Kind>("all");
   const sources = q.data ?? [];
   const kinds = (Object.keys(KIND_LABEL) as Kind[]).filter((k) => sources.some((s) => s.kind === k));
-  const rows = [...sources].filter((s) => kind === "all" || s.kind === kind).sort((a, b) => Number(b.enabled) - Number(a.enabled) || b.open_tenders - a.open_tenders);
+  const groups = groupSources(sources.filter((s) => kind === "all" || s.kind === kind));
   const open = sources.reduce((n, s) => n + (s.open_tenders ?? 0), 0);
-  const latest = latestRun(sources);
+  const latest = latestSuccess(sources);
+  const fresh = sources.filter((s) => freshness(s) === "fresh").length;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
       <PageHeader kicker="Coverage" title="Where the tenders come from">
-        Every tender in TenderLens comes from an official public procurement portal, and every record names and links to it.
+        Every tender in TenderLens comes from an official public procurement portal, and every record names and links to it. This page shows how fresh each one
+        is, honestly.
       </PageHeader>
 
-      <dl className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-3">
+      <dl className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-4">
         <Stat className="bg-surface px-5 py-4" label="Portals indexed" value={q.data ? formatCount(sources.filter((s) => s.enabled).length) : <Skeleton className="h-7 w-12" />} />
         <Stat className="bg-surface px-5 py-4" label="Open tenders" value={q.data ? formatCount(open) : <Skeleton className="h-7 w-20" />} />
-        <Stat className="col-span-2 bg-surface px-5 py-4 sm:col-span-1" label="Last crawl finished" value={q.data ? timeAgo(latest) : <Skeleton className="h-7 w-24" />} />
+        <Stat
+          className="bg-surface px-5 py-4"
+          label="Fresh portals"
+          value={q.data ? `${formatCount(fresh)} / ${formatCount(sources.length)}` : <Skeleton className="h-7 w-16" />}
+          hint={`crawled successfully in the last ${STALE_HOURS} h`}
+        />
+        <Stat className="bg-surface px-5 py-4" label="Last successful crawl" value={q.data ? timeAgo(latest) : <Skeleton className="h-7 w-24" />} />
       </dl>
 
-      <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-10 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-ink">Portals</h2>
         {kinds.length > 1 && (
           <Segmented<"all" | Kind>
@@ -92,63 +176,10 @@ export default function Coverage() {
           </EmptyState>
         </div>
       ) : (
-        <Card className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
-            <caption className="sr-only">Procurement portals indexed by TenderLens, with their last crawl</caption>
-            <thead>
-              <tr className="border-b border-line text-left">
-                <th className="label px-5 py-3 font-medium">Portal</th>
-                <th className="label px-5 py-3 font-medium">Software</th>
-                <th className="label px-5 py-3 text-right font-medium">Open tenders</th>
-                <th className="label px-5 py-3 font-medium">Last run</th>
-                <th className="label px-5 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {q.isLoading
-                ? Array.from({ length: 5 }, (_, i) => (
-                    <tr key={i} className="border-b border-line last:border-0">
-                      <td className="px-5 py-4" colSpan={5}>
-                        <Skeleton className="h-4 w-full" />
-                      </td>
-                    </tr>
-                  ))
-                : rows.map((s) => (
-                    <tr key={s.key} className={cx("border-b border-line align-top last:border-0", !s.enabled && "opacity-70")}>
-                      <td className="px-5 py-3.5">
-                        <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-ink decoration-line-strong underline-offset-4 hover:underline">
-                          {s.name} <ArrowUpRight className="size-3.5 text-ink-3" aria-hidden="true" />
-                        </a>
-                        <p className="mt-0.5 text-xs text-ink-3">{s.state ?? "All India"}</p>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <Tag>{KIND_LABEL[s.kind] ?? s.kind}</Tag>
-                      </td>
-                      <td className="num px-5 py-3.5 text-right text-ink">{formatCount(s.open_tenders)}</td>
-                      <td className="px-5 py-3.5">
-                        <LastRun s={s} />
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {s.enabled ? (
-                          <span className="inline-flex items-center gap-2 text-xs text-ink-2">
-                            <span className="live-dot" aria-hidden="true" /> Crawled on schedule
-                          </span>
-                        ) : (
-                          <span className="text-xs text-ink-3">Paused</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-              {q.data && rows.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-5 py-6 text-center text-sm text-ink-3">
-                    No portals of this kind yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </Card>
+        <>
+          <PortalRows title="Central government, PSUs and defence" hint="All-India portals, most open tenders first" rows={groups.central} loading={q.isLoading} />
+          <PortalRows title="States and union territories" hint="One portal per state, alphabetical" rows={groups.states} loading={q.isLoading} />
+        </>
       )}
 
       <section className="mt-14 grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-3">

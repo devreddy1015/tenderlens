@@ -101,7 +101,10 @@ export interface Source {
   state: string | null;
   url: string;
   open_tenders: number;
+  /** The newest run whatever its outcome; `finished` is null while it is running. */
   last_run: CrawlSummary | null;
+  /** When the newest successful crawl finished: the freshness we promise on /coverage. */
+  last_success: string | null;
   enabled: boolean;
 }
 
@@ -173,6 +176,8 @@ export interface Brief {
   fields: BriefField[];
   missing: string[];
   generated_at: string;
+  /** Tender scope only: how many ready documents the brief was read from (0: none yet). */
+  documents?: number;
 }
 
 export interface Passage {
@@ -221,6 +226,8 @@ export interface EligibilityCheck {
   yours: string | number | null;
   status: "pass" | "fail" | "unknown";
   source: { document_id: number; filename: string; page: number } | null;
+  /** Why the check came out this way, e.g. "No turnover requirement was found…". */
+  note?: string;
 }
 
 export interface Eligibility {
@@ -231,6 +238,7 @@ export interface Eligibility {
 export interface CopilotStatus {
   llm: { available: boolean; model: string };
   embedding_model: string;
+  reranker_model?: string | null;
   documents: number;
 }
 
@@ -271,15 +279,29 @@ export interface Workspace {
   slug: string;
   role: Role;
   plan: Plan;
+  /** This month's counters plus `alerts` (the team's alerts) and `seats` (members). */
   usage: Partial<Record<string, number>>;
   profile: CompanyProfile;
+  /** iCal feed of the pipeline's deadlines; the token in it is the only credential. */
+  calendar_url: string;
+}
+
+/** One organisation the user belongs to, for the workspace switcher. */
+export interface WorkspaceRef {
+  id: number;
+  name: string;
+  slug: string;
+  role: Role;
+  active: boolean;
 }
 
 /** PATCH /api/workspace takes the name and the profile fields side by side. */
 export type WorkspacePatch = Partial<CompanyProfile> & { name?: string };
 
 export interface Member {
+  /** The membership id (DELETE/PATCH members/{id}); `user_id` is the person (pipeline owner). */
   id: number;
+  user_id: number;
   email: string;
   name: string;
   role: Role;
@@ -290,9 +312,11 @@ export interface ApiKey {
   id: number;
   name: string;
   /** First characters of the key, enough to tell keys apart. */
-  prefix?: string;
+  prefix: string;
+  /** Email of the person who created it; the key acts as them. */
+  created_by: string | null;
   created_at: string;
-  last_used_at?: string | null;
+  last_used_at: string | null;
 }
 
 /** Only the create response carries the secret, and only once. */
@@ -301,11 +325,19 @@ export interface NewApiKey extends ApiKey {
 }
 
 export interface Invite {
-  id?: number;
+  id: number;
   email: string;
   role: Role;
-  created_at?: string;
-  expires_at?: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+/** GET /api/workspace/invites/{token} (public): what the /invite page shows before joining. */
+export interface InvitePreview {
+  organization: string;
+  email: string;
+  role: Role;
+  expires_at: string;
 }
 
 export const BID_STATUSES = ["watching", "preparing", "submitted", "won", "lost", "dropped"] as const;
@@ -332,22 +364,50 @@ export interface BidTrackPatch {
 export interface PipelineSummary {
   by_status: Partial<Record<BidStatus, number>>;
   closing_soon: BidTrack[];
-  value_inr_in_play: string | number | null;
+  /** Decimal string, e.g. "31545007.00". */
+  value_inr_in_play: string;
+}
+
+export interface RecommendedTender extends Tender {
+  /** Why it matched, e.g. "Sector: Roads", "State: Chhattisgarh", "Within your turnover limit". */
+  reasons: string[];
+}
+
+export interface RecommendationPage {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  /** True when the company profile has no states or sectors yet: results are then empty. */
+  profile_incomplete: boolean;
+  results: RecommendedTender[];
 }
 
 export type Interval = "month" | "year";
 
+export type SubscriptionStatus = "none" | "created" | "active" | "pending" | "halted" | "cancelled" | "completed";
+
+/** GET /api/billing/subscription, with `plan` flattened to its code (the server sends the Plan). */
 export interface Subscription {
   plan: string;
-  status: string;
+  status: SubscriptionStatus | string;
   interval: Interval | null;
   current_period_end: string | null;
   provider: string | null;
+  /** Razorpay: cancelled, but paid up until current_period_end. */
+  cancel_at_period_end: boolean;
 }
 
 export type CheckoutResult =
-  | { provider: "razorpay"; key_id: string; subscription_id: string }
+  | { provider: "razorpay"; key_id: string; subscription_id: string; short_url?: string | null }
   | { provider: "fake"; activated: boolean };
+
+export interface CsvExport {
+  /** Every matching row, even beyond the export cap. */
+  total: number;
+  /** True when only the first 10,000 rows were exported. */
+  truncated: boolean;
+  rows: number;
+}
 
 // --- Fetch helpers ---------------------------------------------------------------------
 
@@ -358,26 +418,36 @@ export class ApiError extends Error {
   fields: Record<string, string[]>;
   code?: string;
   limit?: string;
+  /** The parsed JSON body, for extras such as the Copilot's 400 `{detail, status}`. */
+  body: Record<string, unknown>;
   constructor(status: number, body: unknown) {
     const fields: Record<string, string[]> = {};
     let message = `Request failed (${status})`;
     let code: string | undefined;
     let limit: string | undefined;
-    if (body && typeof body === "object") {
-      for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
-        if (k === "detail" && typeof v === "string") message = v;
-        else if (k === "code" && typeof v === "string") code = v;
-        else if (k === "limit" && typeof v === "string") limit = v;
-        else if (Array.isArray(v)) fields[k] = v.map(String);
+    const raw = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+    // DRF sends field errors as lists, but a ValidationError raised with a dict of plain
+    // strings (e.g. the Copilot's {"file": "Only PDF files…"}) keeps them as strings.
+    const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : typeof v === "string" ? [v] : null);
+    for (const [k, v] of Object.entries(raw)) {
+      if (k === "detail") {
+        const d = list(v)?.[0];
+        if (d) message = d;
+      } else if (k === "code" && typeof v === "string") code = v;
+      else if (k === "limit" && typeof v === "string") limit = v;
+      else {
+        const l = list(v);
+        if (l) fields[k] = l;
       }
-      const first = Object.values(fields)[0]?.[0];
-      if (message.startsWith("Request failed") && first) message = first;
     }
+    const first = Object.values(fields)[0]?.[0];
+    if (message.startsWith("Request failed") && first) message = first;
     super(message);
     this.status = status;
     this.fields = fields;
     this.code = code;
     this.limit = limit;
+    this.body = raw;
   }
 }
 
@@ -592,10 +662,52 @@ function exportParams(f: Filters): URLSearchParams {
 
 // --- Endpoints -------------------------------------------------------------------------
 
-async function subscription(): Promise<Subscription> {
-  const s = await apiFetch<Omit<Subscription, "plan"> & { plan: string | { code: string } }>("/api/billing/subscription");
-  return { ...s, plan: typeof s.plan === "string" ? s.plan : s.plan.code };
+type SubscriptionBody = Omit<Subscription, "plan" | "cancel_at_period_end"> & { plan: string | { code: string }; cancel_at_period_end?: boolean };
+
+const flattenSubscription = (s: SubscriptionBody): Subscription => ({
+  ...s,
+  plan: typeof s.plan === "string" ? s.plan : s.plan.code,
+  cancel_at_period_end: !!s.cancel_at_period_end,
+});
+
+const subscription = async () => flattenSubscription(await apiFetch<SubscriptionBody>("/api/billing/subscription"));
+const cancelSubscription = async () => flattenSubscription(await apiFetch<SubscriptionBody>("/api/billing/cancel", { method: "POST" }));
+
+/** The file name from a Content-Disposition header, if it names one. */
+function attachmentName(header: string | null, fallback: string): string {
+  return header?.match(/filename="?([^";]+)"?/)?.[1] ?? fallback;
 }
+
+/** GET the CSV export and hand it to the browser as a download. Fetched (not a plain link)
+ *  so a 402 can open the upgrade prompt and the truncation header can be read. */
+async function downloadCsv(f: Filters): Promise<CsvExport> {
+  let r: Response;
+  try {
+    r = await fetch(`/api/export/tenders.csv?${exportParams(f)}`, { headers: { Accept: "text/csv, application/json" }, credentials: "same-origin" });
+  } catch {
+    throw new ApiError(0, null);
+  }
+  if (!r.ok) throw new ApiError(r.status, await r.json().catch(() => null));
+  const blob = await r.blob();
+  const text = typeof blob.text === "function" ? await blob.text() : "";
+  // Rows minus the header line; quoted fields may hold newlines, so this is approximate
+  // and only used when X-Total-Count is missing.
+  const rows = Math.max(0, text.split("\n").filter(Boolean).length - 1);
+  const total = Number(r.headers.get("X-Total-Count") ?? rows);
+  const url = URL.createObjectURL?.(blob);
+  if (url) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = attachmentName(r.headers.get("Content-Disposition"), "tenderlens-tenders.csv");
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+  return { total, truncated: r.headers.get("X-Export-Truncated") === "true", rows: Math.min(total, MAX_CSV_ROWS) };
+}
+
+export const MAX_CSV_ROWS = 10_000;
 
 export const api = {
   tenders: (f: Filters, signal?: AbortSignal) => apiFetch<TenderPage>(`/api/tenders?${toApiParams(f)}`, { signal }),
@@ -636,10 +748,19 @@ export const api = {
     get: () => apiFetch<Workspace>("/api/workspace"),
     update: (patch: WorkspacePatch) => apiFetch<Workspace>("/api/workspace", { method: "PATCH", body: patch }),
     members: () => apiFetch<Member[]>("/api/workspace/members"),
+    /** Owner only. */
+    setRole: (id: number, role: Role) => apiFetch<Member>(`/api/workspace/members/${id}`, { method: "PATCH", body: { role } }),
+    /** Remove a member; your own membership id means leaving the workspace. */
     removeMember: (id: number) => apiFetch<void>(`/api/workspace/members/${id}`, { method: "DELETE" }),
+    invites: () => apiFetch<Invite[]>("/api/workspace/invites"),
     invite: (email: string, role: Role) => apiFetch<Invite>("/api/workspace/invites", { method: "POST", body: { email, role } }),
-    acceptInvite: (token: string) =>
-      apiFetch<Partial<Workspace>>(`/api/workspace/invites/${encodeURIComponent(token)}/accept`, { method: "POST" }),
+    revokeInvite: (id: number) => apiFetch<void>(`/api/workspace/invites/${id}`, { method: "DELETE" }),
+    invitePreview: (token: string) => apiFetch<InvitePreview>(`/api/workspace/invites/${encodeURIComponent(token)}`),
+    acceptInvite: (token: string) => apiFetch<Workspace>(`/api/workspace/invites/${encodeURIComponent(token)}/accept`, { method: "POST" }),
+    list: () => apiFetch<WorkspaceRef[]>("/api/workspaces"),
+    switchTo: (organization: number) => apiFetch<Workspace>("/api/workspace/switch", { method: "POST", body: { organization } }),
+    /** Owner/admin: a new calendar token; the old feed URL stops working. */
+    rotateCalendar: () => apiFetch<{ calendar_url: string }>("/api/workspace/calendar-token", { method: "POST" }),
     apiKeys: () => apiFetch<ApiKey[]>("/api/workspace/api-keys"),
     createApiKey: (name: string) => apiFetch<NewApiKey>("/api/workspace/api-keys", { method: "POST", body: { name } }),
     deleteApiKey: (id: number) => apiFetch<void>(`/api/workspace/api-keys/${id}`, { method: "DELETE" }),
@@ -654,16 +775,19 @@ export const api = {
     summary: () => apiFetch<PipelineSummary>("/api/pipeline/summary"),
   },
 
+  recommendations: (page = 1) => apiFetch<RecommendationPage>(`/api/recommendations?page=${page}&page_size=${PAGE_SIZE}`),
+
   billing: {
     plans: () => apiFetch<Plan[]>("/api/billing/plans"),
     subscription,
     checkout: (plan: string, interval: Interval) =>
       apiFetch<CheckoutResult>("/api/billing/checkout", { method: "POST", body: { plan, interval } }),
-    cancel: () => apiFetch<unknown>("/api/billing/cancel", { method: "POST" }),
+    cancel: cancelSubscription,
   },
 
   exports: {
     csvUrl: (f: Filters) => `/api/export/tenders.csv?${exportParams(f)}`,
+    downloadCsv,
     /** Without filters: the whole public release feed, first page. */
     ocdsUrl: (f?: Filters, page = 1) => {
       const p = f ? exportParams(f) : new URLSearchParams();

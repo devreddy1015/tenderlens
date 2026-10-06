@@ -1,12 +1,12 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Compass } from "lucide-react";
 import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router";
 import { Layout } from "./components/Layout";
 import { EmptyState, Skeleton } from "./components/ui";
-import { ApiError } from "./lib/api";
 import { AuthProvider } from "./lib/auth";
+import { createQueryClient } from "./lib/queryClient";
 import { ThemeProvider } from "./lib/theme";
 import { ToastProvider } from "./lib/toast";
 import Home from "./pages/Home";
@@ -24,17 +24,10 @@ const Copilot = lazy(() => import("./pages/Copilot"));
 const WorkspacePage = lazy(() => import("./pages/Workspace"));
 const Coverage = lazy(() => import("./pages/Coverage"));
 const Invite = lazy(() => import("./pages/Invite"));
+const Developers = lazy(() => import("./pages/Developers"));
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 60_000,
-      refetchOnWindowFocus: false,
-      // A 4xx (signed out, over quota, not found) won't change on a retry; a network blip may.
-      retry: (failures, e) => failures < 1 && !(e instanceof ApiError && e.status >= 400 && e.status < 500),
-    },
-  },
-});
+// Defaults, and the global 402 → upgrade prompt, live in lib/queryClient.ts.
+const queryClient = createQueryClient();
 
 function NotFound() {
   return (
@@ -79,6 +72,7 @@ createRoot(document.getElementById("root")!).render(
                     <Route path="workspace" element={<WorkspacePage />} />
                     <Route path="coverage" element={<Coverage />} />
                     <Route path="invite/:token" element={<Invite />} />
+                    <Route path="developers" element={<Developers />} />
                     {/* The private-tenders waitlist is gone; old links land on the plans. */}
                     <Route path="private" element={<Navigate to="/pricing" replace />} />
                     <Route path="*" element={<NotFound />} />
@@ -92,3 +86,11 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </StrictMode>,
 );
+
+// Installable PWA: the service worker caches only the app shell and hashed assets (see
+// public/sw.js). Production builds only, so the dev server never serves stale modules.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
