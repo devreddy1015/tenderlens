@@ -1,97 +1,444 @@
 @import "tailwindcss";
 
-/* Dark mode follows the .dark class on <html> (set by the theme toggle). */
+/* Dark mode follows the .dark class on <html> (set by the theme toggle), or any element
+   that carries .dark itself: a dark panel on a light page swaps its own tokens. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Semantic tokens: components use bg-surface / text-ink / border-line, and both themes
-   swap here in one place. Map ramp steps come from the dataviz reference palette. */
+/* TenderLens design tokens. Components use bg-surface / text-ink / border-line, so both
+   themes swap here in one place.
+
+   Light is "paper": warm off-white, ink-black type. Dark is "stage": the near-black of
+   ThreeUI's Interface Lines. One signal colour, amber, is used sparingly: live state,
+   the active nav item, ranking bars, the primary button's beam. Text tokens all clear
+   WCAG AA (4.5:1) on bg and surface in their theme. */
 :root {
   color-scheme: light;
-  --bg: #f6f7f9;
+  --bg: #f6f5f1;
   --surface: #ffffff;
-  --surface-2: #f1f3f6;
-  --line: #e3e6eb;
-  --ink: #0f1729;
-  --ink-2: #4a5468;
-  --ink-3: #7b8496;
-  --brand: #1c5cab;
-  --brand-ink: #ffffff;
-  --brand-soft: #e8f1fd;
-  --critical: #c22f2f;
-  --good: #0a7d0a;
-  --map-empty: #eceef2;
-  --map-1: #cde2fb;
-  --map-2: #9ec5f4;
-  --map-3: #6da7ec;
-  --map-4: #3987e5;
-  --map-5: #256abf;
-  --map-6: #184f95;
-  --map-7: #0d366b;
+  --surface-2: #f0eee8;
+  --line: #e3e0d8;
+  --line-strong: #cbc7bc;
+  --ink: #17150f;
+  --ink-2: #4d4a42;
+  --ink-3: #6f6b61;
+  --signal: #e8920c; /* fills: bars, dots, beam */
+  --signal-ink: #1a1203; /* text on a signal fill */
+  --signal-soft: #fbefd9; /* tinted backgrounds */
+  --signal-text: #975400; /* signal-coloured text */
+  --good: #2f7a2f;
+  --good-soft: #e3f1df;
+  --critical: #b93a26;
+  --critical-soft: #f8e4df;
+  /* Choropleth: one hue (amber), lightness falling with magnitude. */
+  --map-empty: #ecebe6;
+  --map-1: #fde3c9;
+  --map-2: #faca98;
+  --map-3: #f4b267;
+  --map-4: #e99a36;
+  --map-5: #d58200;
+  --map-6: #b26a00;
+  --map-7: #8f5300;
   --map-stroke: #ffffff;
+  /* InterfaceLines colours, as "r g b" so the canvas can add alpha. */
+  --field: 23 21 15;
+  --field-alpha: 0.5;
+  --field-accent: 232 146 12;
+  /* Primary button: ThreeUI's dark Spinning Border pill, on both themes. */
+  --btn-top: #2b2924;
+  --btn-bottom: #0f0e0b;
+  --btn-edge: #3a3730;
+  --btn-text: #ecebe6;
+  --shadow: 0 1px 2px rgb(23 21 15 / 0.04), 0 8px 24px -12px rgb(23 21 15 / 0.12);
 }
 .dark {
   color-scheme: dark;
-  --bg: #0b0e14;
-  --surface: #131821;
-  --surface-2: #1a202b;
-  --line: #262d3a;
-  --ink: #f2f4f8;
-  --ink-2: #b4bccb;
-  --ink-3: #828ba0;
-  --brand: #5598e7;
-  --brand-ink: #071d39;
-  --brand-soft: #12243d;
-  --critical: #f07171;
-  --good: #3ec43e;
-  --map-empty: #1d232e;
+  --bg: #0a0a0b;
+  --surface: #111112;
+  --surface-2: #18181a;
+  --line: #242426;
+  --line-strong: #36363a;
+  --ink: #f3f2ee;
+  --ink-2: #b4b2ab;
+  --ink-3: #85837c;
+  --signal: #f5a524;
+  --signal-ink: #1a1203;
+  --signal-soft: #241806;
+  --signal-text: #f5a524;
+  --good: #7cc36b;
+  --good-soft: #13210f;
+  --critical: #f0715a;
+  --critical-soft: #2a110c;
   /* Dark surface: low values recede toward the surface, high values brighten. */
-  --map-1: #12355f;
-  --map-2: #184f95;
-  --map-3: #1c5cab;
-  --map-4: #2a78d6;
-  --map-5: #5598e7;
-  --map-6: #86b6ef;
-  --map-7: #cde2fb;
-  --map-stroke: #0b0e14;
+  --map-empty: #1c1c1e;
+  --map-1: #492f0e;
+  --map-2: #684009;
+  --map-3: #8b5500;
+  --map-4: #b16b00;
+  --map-5: #d48300;
+  --map-6: #f5a33a;
+  --map-7: #ffca86;
+  --map-stroke: #0a0a0b;
+  --field: 255 255 255;
+  --field-alpha: 0.9;
+  --field-accent: 245 165 36;
+  --btn-top: #2a2a2e;
+  --btn-bottom: #0e0e10;
+  --btn-edge: #3a3a40;
+  --btn-text: #dcdbd6;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -16px rgb(0 0 0 / 0.7);
 }
 
 @theme inline {
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
-  --color-brand: var(--brand);
-  --color-brand-ink: var(--brand-ink);
-  --color-brand-soft: var(--brand-soft);
-  --color-critical: var(--critical);
+  --color-signal: var(--signal);
+  --color-signal-ink: var(--signal-ink);
+  --color-signal-soft: var(--signal-soft);
+  --color-signal-text: var(--signal-text);
   --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-critical: var(--critical);
+  --color-critical-soft: var(--critical-soft);
+  --shadow-panel: var(--shadow);
 }
 
-html {
-  background: var(--bg);
-  color: var(--ink);
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  html {
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01";
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100vh;
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.025em;
+  }
+  /* Balance headings, but not h3: those are tender titles in lists, which should use
+     the full width of their column. */
+  h1,
+  h2 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--signal) 32%, transparent);
+  }
+  /* In the base layer, so a rounded-* utility keeps its shape when focused. */
+  :focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
-body {
-  min-height: 100vh;
+
+@layer components {
+  /* --- Buttons ---------------------------------------------------------------------
+     Primary is ThreeUI's Spinning Border button: a dark gradient face whose 1px edge
+     turns into a rotating amber beam on hover and keyboard focus. Secondary, ghost and
+     danger are hairline buttons for the same stage. Utilities (h-11, w-full) still apply. */
+  .btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 6px;
+    font-weight: 500;
+    white-space: nowrap;
+    padding-inline: var(--btn-px);
+    user-select: none;
+    transition: color 0.2s, background-color 0.2s, border-color 0.2s, transform 0.3s, box-shadow 0.3s;
+  }
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  .btn-sm { --btn-px: 0.75rem; height: 2rem; font-size: 0.8125rem; }
+  .btn-md { --btn-px: 1rem; height: 2.5rem; font-size: 0.875rem; }
+  .btn-lg { --btn-px: 1.375rem; height: 3rem; font-size: 0.9375rem; }
+
+  .btn-primary {
+    isolation: isolate;
+    overflow: hidden;
+    padding: 1px;
+    background: var(--btn-edge);
+    color: var(--btn-text);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .btn-primary.btn-sm { font-size: 0.6875rem; }
+  .btn-primary.btn-lg { font-size: 0.8125rem; }
+  .btn-beam {
+    position: absolute;
+    inset: -150%;
+    z-index: -1;
+    background: conic-gradient(
+      from 90deg at 50% 50%,
+      transparent 0%,
+      transparent 55%,
+      color-mix(in srgb, var(--signal) 45%, transparent) 78%,
+      var(--signal) 92%,
+      #fff7e6 100%
+    );
+    opacity: 0;
+    animation: btn-spin 3.2s linear infinite;
+    transition: opacity 0.3s;
+  }
+  .btn-face {
+    display: flex;
+    flex: 1;
+    align-self: stretch;
+    align-items: center;
+    justify-content: center;
+    gap: inherit;
+    border-radius: 5px;
+    padding-inline: calc(var(--btn-px) - 1px);
+    background: linear-gradient(to bottom, var(--btn-top), var(--btn-bottom));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16);
+  }
+  .btn-primary:not(:disabled):hover,
+  .btn-primary:not(:disabled):focus-visible {
+    color: #ffffff;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--signal) 18%, transparent), 0 8px 28px -8px color-mix(in srgb, var(--signal) 45%, transparent);
+  }
+  .btn-primary:not(:disabled):hover .btn-beam,
+  .btn-primary:not(:disabled):focus-visible .btn-beam {
+    opacity: 1;
+  }
+  .btn-primary:not(:disabled):active { transform: translateY(1px); }
+  .btn svg { flex-shrink: 0; }
+  .btn-primary svg { transition: transform 0.3s; }
+  .btn-primary:not(:disabled):hover svg:last-child:not(:first-child) { transform: translateX(2px); }
+
+  .btn-secondary {
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .btn-secondary:not(:disabled):hover {
+    border-color: color-mix(in srgb, var(--ink) 40%, var(--line-strong));
+    background: var(--surface-2);
+  }
+  .btn-ghost { color: var(--ink-2); }
+  .btn-ghost:not(:disabled):hover { background: var(--surface-2); color: var(--ink); }
+  .btn-danger {
+    border: 1px solid color-mix(in srgb, var(--critical) 40%, var(--line));
+    background: var(--surface);
+    color: var(--critical);
+  }
+  .btn-danger:not(:disabled):hover { background: var(--critical-soft); }
+
+  /* --- Panels ------------------------------------------------------------------- */
+  .panel {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  /* Registration marks just outside a panel's corners, like a viewfinder (the logo). */
+  .ticks {
+    position: relative;
+  }
+  .ticks::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    pointer-events: none;
+    --t: var(--tick, var(--line-strong));
+    --s: 9px;
+    background:
+      linear-gradient(var(--t) 0 0) top left / var(--s) 1px,
+      linear-gradient(var(--t) 0 0) top left / 1px var(--s),
+      linear-gradient(var(--t) 0 0) top right / var(--s) 1px,
+      linear-gradient(var(--t) 0 0) top right / 1px var(--s),
+      linear-gradient(var(--t) 0 0) bottom left / var(--s) 1px,
+      linear-gradient(var(--t) 0 0) bottom left / 1px var(--s),
+      linear-gradient(var(--t) 0 0) bottom right / var(--s) 1px,
+      linear-gradient(var(--t) 0 0) bottom right / 1px var(--s);
+    background-repeat: no-repeat;
+  }
+
+  /* --- Type helpers --------------------------------------------------------------- */
+  /* Micro label: mono, uppercase, wide tracking. For field names, column heads, units. */
+  .label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  /* Bracketed mono eyebrow, as in the Interface Lines stage: [ TENDER MAP ]. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .eyebrow::before { content: "[ "; color: var(--signal-text); }
+  .eyebrow::after { content: " ]"; color: var(--signal-text); }
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* --- Small controls ------------------------------------------------------------- */
+  .kbd {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding-inline: 0.25rem;
+    border: 1px solid var(--line-strong);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--ink-3);
+  }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 1.5rem;
+    padding-inline: 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--surface);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .tag-signal { border-color: color-mix(in srgb, var(--signal) 35%, var(--line)); background: var(--signal-soft); color: var(--signal-text); }
+  .tag-good { border-color: color-mix(in srgb, var(--good) 35%, var(--line)); background: var(--good-soft); color: var(--good); }
+  .tag-critical { border-color: color-mix(in srgb, var(--critical) 35%, var(--line)); background: var(--critical-soft); color: var(--critical); }
+
+  /* Segmented control: a radiogroup of buttons. */
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+  }
+  .seg > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    height: 1.875rem;
+    padding-inline: 0.625rem;
+    border-radius: 4px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ink-3);
+    transition: color 0.15s, background-color 0.15s;
+  }
+  .seg > button:hover { color: var(--ink); }
+  .seg-sm > button { height: 1.625rem; padding-inline: 0.5rem; }
+  .seg > button[aria-checked="true"] {
+    background: var(--surface-2);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+
+  .switch {
+    position: relative;
+    width: 2.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background: var(--line-strong);
+    transition: background-color 0.2s;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 9999px;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+    transition: transform 0.2s;
+  }
+  .switch[aria-checked="true"] { background: var(--signal); }
+  .switch[aria-checked="true"]::after { transform: translateX(1rem); }
+
+  /* A thin data bar: a track and an amber fill, width set inline. */
+  .bar { height: 3px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+  .bar > span { display: block; height: 100%; border-radius: 2px; background: var(--signal); }
+  .bar-critical > span { background: var(--critical); }
+
+  .live-dot {
+    position: relative;
+    display: inline-flex;
+    width: 6px;
+    height: 6px;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background: var(--good);
+  }
+  .live-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    animation: live-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
 }
-::selection {
-  background: color-mix(in srgb, var(--brand) 30%, transparent);
+
+/* Quiets the line field behind the hero copy (an ellipse over the text, placed with the
+   --calm-* variables) and fades it out toward the bottom edge, so lines never cut
+   through what people read. */
+.field-mask-hero {
+  --calm: radial-gradient(
+    var(--calm-w, 42%) var(--calm-h, 46%) at var(--calm-x, 26%) var(--calm-y, 46%),
+    rgb(0 0 0 / 0.1) 0%,
+    rgb(0 0 0 / 0.3) 55%,
+    black 100%
+  );
+  -webkit-mask-image: var(--calm), linear-gradient(to bottom, black 55%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: var(--calm), linear-gradient(to bottom, black 55%, transparent);
+  mask-composite: intersect;
 }
-:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-  border-radius: 6px;
+/* A faint engineering grid, for hero stages. */
+.grid-paper {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--ink) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--ink) 4%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: -1px -1px;
 }
-.hero-glow {
-  background:
-    radial-gradient(60% 80% at 15% 0%, color-mix(in srgb, var(--brand) 18%, transparent) 0%, transparent 60%),
-    radial-gradient(50% 70% at 90% 10%, color-mix(in srgb, #7c5cff 14%, transparent) 0%, transparent 60%);
-}
+
 .skeleton {
   background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 37%, var(--surface-2) 63%);
   background-size: 400% 100%;
@@ -101,7 +448,16 @@ body {
   0% { background-position: 100% 50%; }
   100% { background-position: 0 50%; }
 }
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes live-ping {
+  75%,
+  100% { transform: scale(2.6); opacity: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .skeleton { animation: none; }
+  .skeleton,
+  .btn-beam,
+  .live-dot::after { animation: none; }
   * { scroll-behavior: auto !important; transition: none !important; }
 }

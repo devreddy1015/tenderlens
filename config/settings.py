@@ -101,6 +101,9 @@ DATABASES = {
         "CONN_HEALTH_CHECKS": True,
         # PgBouncer in transaction mode (Neon's "-pooler" host) cannot keep server-side cursors.
         "DISABLE_SERVER_SIDE_CURSORS": "-pooler" in _db["HOST"],
+        # Parallel test runs (CI shards, several builders on one machine) each need their own
+        # test database: TEST_DB_NAME=test_<name> uv run pytest.
+        "TEST": {"NAME": env("TEST_DB_NAME")},
     }
 }
 
@@ -276,7 +279,8 @@ CRAWLER = {
     # Listing/index pages are only needed for change detection; details are kept.
     "RAW_LISTING_RETENTION_DAYS": int(env("RAW_LISTING_RETENTION_DAYS", "7")),
     # Unset: keep every detail page. Set (small hosted databases): after this many days,
-    # delete detail pages that no tender or quarantine row points at.
+    # delete detail pages that no tender or quarantine row points at. 0 also drops an
+    # unchanged re-fetch as soon as it is loaded (see pipeline.record_loaded).
     "RAW_DETAIL_RETENTION_DAYS": (
         int(env("RAW_DETAIL_RETENTION_DAYS")) if env("RAW_DETAIL_RETENTION_DAYS") else None
     ),

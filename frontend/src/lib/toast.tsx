@@ -15,12 +15,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={push}>
       {children}
-      <div className="fixed bottom-20 left-1/2 z-50 flex w-[min(92vw,420px)] -translate-x-1/2 flex-col gap-2" aria-live="polite">
+      <div className="fixed bottom-16 left-1/2 z-50 flex w-[min(92vw,420px)] -translate-x-1/2 flex-col gap-2" aria-live="polite">
         {toasts.map((t) => (
           <div
             key={t.id}
             role="status"
-            className="flex items-start gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm shadow-lg shadow-black/10"
+            className={`flex items-start gap-3 rounded-md border border-l-2 border-line-strong bg-surface px-4 py-3 text-sm shadow-panel ${t.kind === "success" ? "border-l-good" : "border-l-critical"}`}
           >
             {t.kind === "success" ? (
               <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-good" aria-label="Done" />

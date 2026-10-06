@@ -178,6 +178,39 @@ def test_prune_detail_retention_keeps_pages_still_referenced(make_page, settings
     assert Tender.objects.get().raw_page_id == current.pk
 
 
+def test_prune_deletes_unchanged_items_with_their_page(make_page, settings):
+    """Pruning must not UPDATE crawl items: a database at its size limit has no room."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from ingest.loader import load_detail_page
+    from tests.conftest import fixture_text
+
+    old = timezone.now() - timedelta(days=30)
+    html = fixture_text("gepnic_central/detail_01.html")
+    load_detail_page(make_page(html, fetched_at=old))
+    refetched = make_page(html, fetched_at=old)
+    load_detail_page(refetched)
+    done = CrawlRun.objects.create(source="central", status=CrawlRun.Status.SUCCEEDED)
+    running = CrawlRun.objects.create(source="central")
+    for run in (done, running):
+        CrawlItem.objects.create(
+            crawl_run=run, source_tender_id="T", outcome="unchanged", raw_page=refetched
+        )
+
+    settings.CRAWLER = {**settings.CRAWLER, "RAW_DETAIL_RETENTION_DAYS": 0}
+    assert tasks.prune_raw_pages.apply().get() == 1
+    assert list(CrawlItem.objects.values_list("crawl_run", "raw_page")) == [(running.pk, None)]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_prune_command():
+    from django.core.management import call_command
+
+    call_command("prune")  # VACUUM fails inside a transaction block
+
+
 def test_prune_crawl_items_only_old_finished_runs(db, settings):
     from datetime import timedelta
 

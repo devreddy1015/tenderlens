@@ -1,12 +1,15 @@
-import { Bell, LogOut, Menu, MessageSquareText, Monitor, Moon, Sun, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Bell, LogOut, Menu, MessageSquareText, Monitor, Moon, Search, Sun, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { ApiError, api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { formatCount, timeAgo } from "../lib/format";
 import { type ThemeChoice, useTheme } from "../lib/theme";
 import { useToast } from "../lib/toast";
 import { MAP_ATTRIBUTION } from "./IndiaMap";
-import { Button, cx, Dialog, Field, inputClass } from "./ui";
+import { Logo } from "./Logo";
+import { Button, ButtonLink, cx, Dialog, Field, inputClass, Segmented } from "./ui";
 
 const NAV = [
   { to: "/tenders", label: "Explore" },
@@ -16,45 +19,66 @@ const NAV = [
   { to: "/private", label: "Private", soon: true },
 ];
 
-export function Logo() {
-  return (
-    <Link to="/" className="flex items-center gap-2.5" aria-label="TenderLens home">
-      <span className="grid size-8 place-items-center rounded-lg bg-brand text-brand-ink">
-        <svg viewBox="0 0 32 32" className="size-5" aria-hidden="true">
-          <circle cx="14" cy="14" r="7" fill="none" stroke="currentColor" strokeWidth="3" />
-          <path d="M19 19l6 6" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-        </svg>
-      </span>
-      <span className="text-[17px] font-bold tracking-tight text-ink">TenderLens</span>
-    </Link>
-  );
-}
+export { Logo };
 
 function ThemeToggle() {
   const { choice, setChoice } = useTheme();
-  const options: { v: ThemeChoice; icon: typeof Sun; label: string }[] = [
+  const opts: { v: ThemeChoice; icon: typeof Sun; label: string }[] = [
     { v: "light", icon: Sun, label: "Light" },
     { v: "dark", icon: Moon, label: "Dark" },
     { v: "system", icon: Monitor, label: "System" },
   ];
   return (
-    <div className="flex rounded-full border border-line bg-surface p-0.5" role="radiogroup" aria-label="Colour theme">
-      {options.map(({ v, icon: Icon, label }) => (
-        <button
-          key={v}
-          role="radio"
-          aria-checked={choice === v}
-          title={label}
-          onClick={() => setChoice(v)}
-          className={cx(
-            "grid size-8 place-items-center rounded-full transition-colors",
-            choice === v ? "bg-surface-2 text-ink" : "text-ink-3 hover:text-ink",
-          )}
-        >
-          <Icon className="size-4" aria-label={label} />
-        </button>
-      ))}
-    </div>
+    <Segmented
+      label="Colour theme"
+      className="seg-sm"
+      value={choice}
+      onChange={setChoice}
+      options={opts.map(({ v, icon: Icon, label }) => ({ value: v, title: label, label: <Icon className="size-3.5" aria-label={label} /> }))}
+    />
+  );
+}
+
+/** Header search. Press "/" anywhere to jump into it; Enter opens the results. */
+function QuickSearch({ className }: { className?: string }) {
+  const nav = useNavigate();
+  const [q, setQ] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      e.preventDefault();
+      ref.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+  return (
+    <form
+      role="search"
+      className={cx(
+        "group h-8 w-64 items-center gap-2 rounded-md border border-line bg-surface px-2.5 transition-colors focus-within:border-signal hover:border-line-strong",
+        className,
+      )}
+      onSubmit={(e) => {
+        e.preventDefault();
+        nav(`/tenders${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ""}`);
+        setQ("");
+        ref.current?.blur();
+      }}
+    >
+      <Search className="size-3.5 shrink-0 text-ink-3" aria-hidden="true" />
+      <input
+        ref={ref}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search tenders"
+        aria-label="Search tenders"
+        className="h-full min-w-0 flex-1 bg-transparent text-[13px] text-ink placeholder:text-ink-3 focus:outline-none"
+      />
+      <kbd className="kbd group-focus-within:hidden">/</kbd>
+    </form>
   );
 }
 
@@ -69,33 +93,43 @@ function UserMenu() {
   }, []);
   if (!me?.authenticated || !me.user) {
     return (
-      <Link to="/alerts" className="inline-flex h-10 items-center rounded-full bg-brand px-4 text-sm font-semibold text-brand-ink hover:brightness-110">
+      <ButtonLink variant="primary" size="sm" to="/alerts">
         Sign in
-      </Link>
+      </ButtonLink>
     );
   }
   const u = me.user;
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 rounded-full p-0.5 hover:bg-surface-2" aria-expanded={open} aria-label="Account menu">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="grid size-8 place-items-center overflow-hidden rounded-md border border-line bg-surface hover:border-line-strong"
+        aria-expanded={open}
+        aria-label="Account menu"
+      >
         {u.picture ? (
-          <img src={u.picture} alt="" className="size-9 rounded-full" referrerPolicy="no-referrer" />
+          <img src={u.picture} alt="" className="size-full object-cover" referrerPolicy="no-referrer" />
         ) : (
-          <span className="grid size-9 place-items-center rounded-full bg-brand-soft font-semibold text-brand">{u.name[0]?.toUpperCase()}</span>
+          <span className="num text-sm font-medium text-ink">{u.name[0]?.toUpperCase()}</span>
         )}
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-64 rounded-2xl border border-line bg-surface p-2 shadow-xl shadow-black/10">
-          <div className="px-3 py-2">
-            <p className="truncate text-sm font-semibold text-ink">{u.name}</p>
-            <p className="truncate text-xs text-ink-3">{u.email}</p>
+        <div className="absolute right-0 z-30 mt-2 w-64 rounded-lg border border-line bg-surface p-1 shadow-panel">
+          <div className="border-b border-line px-3 py-2.5">
+            <p className="truncate text-sm font-medium text-ink">{u.name}</p>
+            <p className="num truncate text-xs text-ink-3">{u.email}</p>
           </div>
-          <Link to="/alerts" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-ink hover:bg-surface-2">
-            <Bell className="size-4" /> My alerts
-          </Link>
-          <button onClick={() => (setOpen(false), signOut())} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-ink hover:bg-surface-2">
-            <LogOut className="size-4" /> Sign out
-          </button>
+          <div className="pt-1">
+            <Link to="/alerts" onClick={() => setOpen(false)} className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink">
+              <Bell className="size-4" /> My alerts
+            </Link>
+            <button
+              onClick={() => (setOpen(false), signOut())}
+              className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink"
+            >
+              <LogOut className="size-4" /> Sign out
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -112,14 +146,17 @@ function NavItems({ onNavigate, vertical }: { onNavigate?: () => void; vertical?
           onClick={onNavigate}
           className={({ isActive }) =>
             cx(
-              "inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition-colors",
-              vertical && "w-full rounded-xl py-3 text-base",
-              isActive ? "bg-surface-2 text-ink" : "text-ink-2 hover:text-ink",
+              "relative inline-flex items-center gap-1.5 rounded-md text-sm transition-colors",
+              vertical ? "w-full px-3 py-3 text-base" : "h-8 px-2.5",
+              isActive ? "text-ink" : "text-ink-3 hover:text-ink",
+              // The active page gets an amber rule sitting on the header's bottom border.
+              isActive && !vertical && "after:absolute after:inset-x-2.5 after:-bottom-[13px] after:h-px after:bg-signal",
+              isActive && vertical && "bg-surface-2",
             )
           }
         >
           {n.label}
-          {n.soon && <span className="rounded-full bg-brand-soft px-1.5 py-px text-[10px] font-semibold tracking-wide text-brand uppercase">Soon</span>}
+          {n.soon && <span className="label rounded-[3px] border border-line px-1 py-px text-[9px] tracking-[0.1em]">Soon</span>}
         </NavLink>
       ))}
     </>
@@ -130,28 +167,35 @@ function Header() {
   const [menu, setMenu] = useState(false);
   const loc = useLocation();
   useEffect(() => setMenu(false), [loc.pathname]);
+  const onExplore = loc.pathname === "/tenders";
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-bg/80 backdrop-blur-lg">
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6">
+    <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
+      <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4 sm:px-6">
         <Logo />
-        <nav className="ml-4 hidden items-center gap-1 md:flex" aria-label="Main">
+        <nav className="hidden items-center gap-0.5 md:flex" aria-label="Main">
           <NavItems />
         </nav>
         <div className="ml-auto flex items-center gap-2">
+          {!onExplore && <QuickSearch className="hidden lg:flex" />}
           <div className="hidden sm:block">
             <ThemeToggle />
           </div>
           <UserMenu />
-          <button className="grid size-10 place-items-center rounded-full text-ink-2 hover:bg-surface-2 md:hidden" onClick={() => setMenu((m) => !m)} aria-label="Menu" aria-expanded={menu}>
-            {menu ? <X className="size-5" /> : <Menu className="size-5" />}
+          <button
+            className="grid size-8 place-items-center rounded-md border border-line text-ink-2 hover:bg-surface-2 md:hidden"
+            onClick={() => setMenu((m) => !m)}
+            aria-label="Menu"
+            aria-expanded={menu}
+          >
+            {menu ? <X className="size-4" /> : <Menu className="size-4" />}
           </button>
         </div>
       </div>
       {menu && (
         <nav className="border-t border-line bg-bg px-4 pt-2 pb-4 md:hidden" aria-label="Main">
           <NavItems vertical onNavigate={() => setMenu(false)} />
-          <div className="mt-3 flex items-center justify-between px-2">
-            <span className="text-sm text-ink-2">Theme</span>
+          <div className="mt-3 flex items-center justify-between border-t border-line px-3 pt-4">
+            <span className="label">Theme</span>
             <ThemeToggle />
           </div>
         </nav>
@@ -199,7 +243,7 @@ function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void 
 
   return (
     <Dialog open={open} onClose={onClose} title="Send feedback">
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={submit} className="space-y-5">
         <p className="text-sm text-ink-2">Found a bug, wrong data, or want a feature? Tell us. We read every message.</p>
         <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Feedback type">
           {FEEDBACK_KINDS.map((k) => (
@@ -210,10 +254,11 @@ function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void 
               aria-checked={kind === k.v}
               onClick={() => setKind(k.v)}
               className={cx(
-                "rounded-xl border px-3 py-2.5 text-left text-sm transition-colors",
-                kind === k.v ? "border-brand bg-brand-soft font-medium text-brand" : "border-line text-ink-2 hover:bg-surface-2",
+                "flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-left text-sm transition-colors",
+                kind === k.v ? "border-signal bg-signal-soft text-ink" : "border-line text-ink-2 hover:border-line-strong hover:text-ink",
               )}
             >
+              <span className={cx("size-3.5 shrink-0 rounded-full border", kind === k.v ? "border-[4px] border-signal" : "border-line-strong")} aria-hidden="true" />
               {k.label}
             </button>
           ))}
@@ -226,7 +271,7 @@ function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void 
             rows={5}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            className={cx(inputClass, "h-auto py-3")}
+            className={cx(inputClass, "h-auto py-2.5")}
             placeholder={kind === "bug" ? "What did you do, what did you expect, and what happened instead?" : "Tell us more"}
           />
         </Field>
@@ -237,7 +282,7 @@ function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void 
         )}
         {/* Honeypot for bots: visually hidden, never filled by people. */}
         <input tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} className="hidden" aria-hidden="true" name="website" />
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex justify-end gap-2 border-t border-line pt-4">
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
@@ -250,39 +295,58 @@ function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
-function Footer({ onFeedback }: { onFeedback: () => void }) {
+function FooterLinks({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <footer className="mt-24 border-t border-line">
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr]">
+    <div>
+      <p className="label mb-4">{title}</p>
+      <ul className="space-y-2.5 text-sm text-ink-2 [&_a:hover]:text-ink [&_button:hover]:text-ink">{children}</ul>
+    </div>
+  );
+}
+
+function Footer({ onFeedback }: { onFeedback: () => void }) {
+  const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats });
+  return (
+    <footer className="mt-28 border-t border-line">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.6fr_1fr_1fr_1fr]">
         <div>
           <Logo />
-          <p className="mt-3 max-w-sm text-sm text-ink-2">
-            Every open government tender from NIC's public e-procurement portals, searchable in one place. Crawled politely, at one request per second.
+          <p className="mt-4 max-w-sm text-sm text-ink-2">
+            An index of every open tender on India's public e-procurement portals, crawled politely at one request per second.
           </p>
-          <p className="mt-3 text-xs text-ink-3">Always confirm details on the official portal before bidding.</p>
+          <p className="num mt-5 inline-flex items-center gap-2 rounded-md border border-line px-2.5 py-1.5 text-xs text-ink-2">
+            <span className="live-dot" aria-hidden="true" />
+            {stats.data ? (
+              <>
+                {formatCount(stats.data.open_tenders)} open · indexed {timeAgo(stats.data.last_crawl?.finished)}
+              </>
+            ) : (
+              "Index status…"
+            )}
+          </p>
         </div>
-        <div>
-          <p className="mb-3 text-sm font-semibold text-ink">Product</p>
-          <ul className="space-y-2 text-sm text-ink-2">
-            <li><Link to="/tenders" className="hover:text-ink">Explore tenders</Link></li>
-            <li><Link to="/map" className="hover:text-ink">Tender map</Link></li>
-            <li><Link to="/alerts" className="hover:text-ink">Email alerts</Link></li>
-            <li><Link to="/private" className="hover:text-ink">Private tenders <span className="text-xs text-brand">soon</span></Link></li>
-          </ul>
-        </div>
-        <div>
-          <p className="mb-3 text-sm font-semibold text-ink">Resources</p>
-          <ul className="space-y-2 text-sm text-ink-2">
-            <li><a href="/api/docs/" className="hover:text-ink">API documentation</a></li>
-            <li><button onClick={onFeedback} className="hover:text-ink">Report a bug</button></li>
-            <li><a href="https://eprocure.gov.in/eprocure/app" target="_blank" rel="noreferrer" className="hover:text-ink">CPPP official portal ↗</a></li>
-          </ul>
-        </div>
+        <FooterLinks title="Product">
+          <li><Link to="/tenders">Explore tenders</Link></li>
+          <li><Link to="/map">Tender map</Link></li>
+          <li><Link to="/sectors">Sectors</Link></li>
+          <li><Link to="/alerts">Email alerts</Link></li>
+        </FooterLinks>
+        <FooterLinks title="Sources">
+          <li><a href="https://eprocure.gov.in/eprocure/app" target="_blank" rel="noreferrer">CPPP portal ↗</a></li>
+          <li><a href="https://mptenders.gov.in/nicgep/app" target="_blank" rel="noreferrer">MP e-tenders ↗</a></li>
+          <li><a href="/api/docs/">API documentation</a></li>
+        </FooterLinks>
+        <FooterLinks title="Support">
+          <li><button onClick={onFeedback}>Report a bug</button></li>
+          <li><button onClick={onFeedback}>Suggest a feature</button></li>
+          <li><Link to="/private">Private tenders <span className="text-signal-text">· soon</span></Link></li>
+        </FooterLinks>
       </div>
       <div className="border-t border-line">
-        <p className="mx-auto max-w-7xl px-4 py-4 text-xs text-ink-3 sm:px-6">
-          Tender data: NIC GePNIC public listings. {MAP_ATTRIBUTION}.
-        </p>
+        <div className="mx-auto flex max-w-7xl flex-wrap justify-between gap-x-6 gap-y-2 px-4 pt-4 pb-16 text-xs text-ink-3 sm:px-6 md:pr-36 md:pb-4">
+          <p>Tender data: NIC GePNIC public listings. {MAP_ATTRIBUTION}.</p>
+          <p>Always confirm details on the official portal before bidding.</p>
+        </div>
       </div>
     </footer>
   );
@@ -291,10 +355,14 @@ function Footer({ onFeedback }: { onFeedback: () => void }) {
 export function Layout() {
   const [feedback, setFeedback] = useState(false);
   const loc = useLocation();
-  useEffect(() => window.scrollTo(0, 0), [loc.pathname]);
+  // Braces matter: newer browsers return a Promise from scrollTo, and an effect may only
+  // return a cleanup function.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [loc.pathname]);
   return (
     <div className="flex min-h-screen flex-col">
-      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2">
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2">
         Skip to content
       </a>
       <Header />
@@ -302,11 +370,8 @@ export function Layout() {
         <Outlet />
       </main>
       <Footer onFeedback={() => setFeedback(true)} />
-      <button
-        onClick={() => setFeedback(true)}
-        className="fixed right-4 bottom-4 z-30 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2.5 text-sm font-semibold text-ink shadow-lg shadow-black/10 hover:bg-surface-2"
-      >
-        <MessageSquareText className="size-4 text-brand" aria-hidden="true" />
+      <button onClick={() => setFeedback(true)} className="btn btn-secondary btn-sm fixed right-4 bottom-4 z-30 shadow-panel">
+        <MessageSquareText className="size-3.5 text-signal-text" aria-hidden="true" />
         Feedback
       </button>
       <FeedbackDialog open={feedback} onClose={() => setFeedback(false)} />

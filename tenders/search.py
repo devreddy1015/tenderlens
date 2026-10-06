@@ -1,327 +1,359 @@
-"""Elasticsearch index, document mapping and search queries.
+"""Tender search on Postgres: full-text ranking, typo correction, ID lookup and facets.
 
-title is analysed with the English analyser (stemming: "roads" finds "road") plus an
-edge n-gram sub-field for partial words ("constr" finds "construction"). Misspellings
-are handled by fuzziness=AUTO on the main query.
+The search document is the generated `tender.search_vector` column (migration
+0004_postgres_search): title (stemmed and as written) and IDs weigh A, the buyer C,
+location and organisation chain D. A query is matched in stages; the first that finds
+anything answers:
+
+  1. every word, websearch syntax ("quoted phrase", or, -not), each word a prefix
+     ("constr" finds "construction") and stemmed ("toilets" finds "toilet"); an exact tender
+     ID / reference number ranks first
+  2. the same after correcting words that occur nowhere in the data ("toliet" -> "toilet"):
+     nearest words of the `tender_word` list by pg_trgm distance, accepted within
+     Elasticsearch's AUTO fuzziness (1 edit for 3-5 letters, 2 for longer words)
+  3. a multi-word query: any one word (relaxed=True)
+
+Ranking is ts_rank_cd with weights that make a title match outrank a buyer-name match, so
+"maintenance" lists maintenance work before the Estate Maintenance Section's other tenders.
+Facets are disjunctive: each group is counted with every *other* group's filter applied, so
+after picking "Roads" the sector list still shows the other sectors.
 """
 
-import contextlib
-import logging
-from functools import lru_cache
+import re
+from dataclasses import dataclass
 
-from django.conf import settings
-from elasticsearch import Elasticsearch, NotFoundError, helpers
+from django.db import connection
+from django.db.models import BooleanField, Count, F, FloatField, Q, QuerySet
+from django.db.models.expressions import RawSQL
+from django.utils import timezone
 
-log = logging.getLogger(__name__)
+from tenders.models import Tender
 
+VECTOR = "tender.search_vector"
+# ts_rank_cd weights for labels {D, C, B, A}: location/org chain, buyer, -, title/IDs.
+RANK = f"ts_rank_cd('{{0.05, 0.2, 0.4, 1.0}}'::float4[], {VECTOR}, %s::tsquery)"
+
+# One user term (a word or a "quoted phrase") parsed and stemmed by websearch_to_tsquery,
+# then every lexeme of it made a prefix match. The pattern matches a quoted lexeme in the
+# tsquery's text form, where an embedded quote is doubled.
+PREFIX_TERM = (
+    r"regexp_replace(websearch_to_tsquery('english', %s)::text,"
+    r" '''((?:[^'']|'''')+)''', '''\1'':*', 'g')::tsquery"
+)
+MAX_TERMS = 16
+
+# (key, from, to): from inclusive, to exclusive, None open-ended. Values are INR.
 VALUE_RANGES = [
-    {"key": "under_10_lakh", "to": 1_000_000},
-    {"key": "10_lakh_to_1_crore", "from": 1_000_000, "to": 10_000_000},
-    {"key": "1_to_10_crore", "from": 10_000_000, "to": 100_000_000},
-    {"key": "over_10_crore", "from": 100_000_000},
+    ("under_10_lakh", None, 1_000_000),
+    ("10_lakh_to_1_crore", 1_000_000, 10_000_000),
+    ("1_to_10_crore", 10_000_000, 100_000_000),
+    ("over_10_crore", 100_000_000, None),
 ]
+FACET_FIELDS = ("state", "sector", "category", "value_range")
+# The request parameters that make up each facet group's own filter.
+FACET_PARAMS = {
+    "state": ("state",),
+    "sector": ("sector",),
+    "category": ("category",),
+    "value_range": ("min_value", "max_value"),
+}
+FACET_SIZE = 40
 
-INDEX_BODY = {
-    "settings": {
-        "number_of_shards": 1,
-        "number_of_replicas": 0,
-        "analysis": {
-            "filter": {
-                "autocomplete_filter": {"type": "edge_ngram", "min_gram": 2, "max_gram": 15}
-            },
-            "analyzer": {
-                "autocomplete": {
-                    "type": "custom",
-                    "tokenizer": "standard",
-                    "filter": ["lowercase", "asciifolding", "autocomplete_filter"],
-                },
-                "autocomplete_search": {
-                    "type": "custom",
-                    "tokenizer": "standard",
-                    "filter": ["lowercase", "asciifolding"],
-                },
-            },
-        },
-    },
-    "mappings": {
-        "dynamic": "strict",
-        "properties": {
-            "id": {"type": "long"},
-            "source": {"type": "keyword"},
-            "source_tender_id": {"type": "keyword"},
-            "ref_no": {"type": "keyword", "fields": {"text": {"type": "text"}}},
-            "title": {
-                "type": "text",
-                "analyzer": "english",
-                "fields": {
-                    # Unstemmed copy for typo matching: fuzziness runs on analysed terms,
-                    # and stemming ("conservation" -> "conserv") pushes a misspelling
-                    # ("consrvation" -> "consrvat") beyond the 2-edit limit.
-                    "plain": {"type": "text", "analyzer": "standard"},
-                    "auto": {
-                        "type": "text",
-                        "analyzer": "autocomplete",
-                        "search_analyzer": "autocomplete_search",
-                    },
-                },
-            },
-            "buyer": {"type": "keyword"},
-            "buyer_id": {"type": "long"},
-            "buyer_text": {"type": "text", "analyzer": "english"},
-            "org_chain": {"type": "text"},
-            "state": {"type": "keyword"},
-            "pincode": {"type": "keyword"},
-            "sector": {"type": "keyword"},
-            "category": {"type": "keyword"},
-            "product_category": {"type": "keyword"},
-            "location": {"type": "text"},
-            "value_inr": {"type": "double"},
-            "emd_inr": {"type": "double"},
-            "published_at": {"type": "date"},
-            "closes_at": {"type": "date"},
-        },
-    },
+ORDER = {
+    "closing": ("closes_at", "id"),
+    "newest": ("-published_at", "id"),
+    "value": (F("value_inr").desc(nulls_last=True), "closes_at", "id"),
 }
 
 
-@lru_cache(maxsize=1)
-def client() -> Elasticsearch:
-    return Elasticsearch(settings.ES_URL, request_timeout=10, retry_on_timeout=True, max_retries=2)
+@dataclass(frozen=True)
+class TextMatch:
+    """How the text query was matched."""
+
+    tsquery: str  # tsquery text; "" when the query has no searchable words
+    exact: tuple[int, ...] = ()  # tenders whose ID / reference number equals the query
+    relaxed: bool = False
+    corrected: str | None = None  # the query after typo correction, when that was needed
 
 
-def available() -> bool:
-    if not settings.ES_ENABLED:
-        return False
-    try:
-        return bool(client().ping())
-    except Exception:
-        return False
+# --- query parsing ----------------------------------------------------------------------
+
+_TOKEN = re.compile(r'(-?)"([^"]*)"?|(\S+)')
+_WORD = re.compile(r"[^\W\d_]+")
 
 
-def ensure_index(recreate: bool = False) -> None:
-    es = client()
-    if recreate:
-        es.indices.delete(index=settings.ES_INDEX, ignore_unavailable=True)
-    if not es.indices.exists(index=settings.ES_INDEX):
-        es.indices.create(index=settings.ES_INDEX, body=INDEX_BODY)
+def parse(q: str) -> tuple[list[list[str]], list[str]]:
+    """websearch syntax -> (clauses, negated terms). Every clause must match; a clause is
+    one term or several joined by "or". Terms are words or quoted phrases (kept quoted so
+    websearch_to_tsquery turns them into phrase queries)."""
+    clauses: list[list[str]] = []
+    negated: list[str] = []
+    join_next = False
+    for m in _TOKEN.finditer(q):
+        neg, phrase, word = m.group(1), m.group(2), m.group(3)
+        if phrase is not None:
+            if not _WORD.search(phrase) and not any(c.isdigit() for c in phrase):
+                continue
+            term = f'"{phrase}"'
+        elif word.lower() == "or":
+            join_next = bool(clauses)
+            continue
+        elif word.startswith("-") and len(word) > 1:
+            neg, term = "-", word[1:]
+        else:
+            term = word
+        if neg:
+            negated.append(term)
+        elif join_next:
+            clauses[-1].append(term)
+        else:
+            clauses.append([term])
+        join_next = False
+    return clauses, negated
 
 
-def to_doc(t) -> dict:
-    buyer = t.buyer_entity.canonical_name if t.buyer_entity_id else t.buyer_raw
-    return {
-        "id": t.id,
-        "source": t.source,
-        "source_tender_id": t.source_tender_id,
-        "ref_no": t.ref_no,
-        "title": t.title,
-        "buyer": buyer,
-        "buyer_id": t.buyer_entity_id,
-        "buyer_text": f"{buyer} {t.buyer_raw}",
-        "org_chain": t.org_chain,
-        "state": t.state or None,
-        "pincode": t.pincode or None,
-        "sector": t.sector or None,
-        "category": t.category or None,
-        "product_category": t.product_category or None,
-        "location": t.location,
-        "value_inr": float(t.value_inr) if t.value_inr is not None else None,
-        "emd_inr": float(t.emd_inr) if t.emd_inr is not None else None,
-        "published_at": t.published_at.isoformat(),
-        "closes_at": t.closes_at.isoformat(),
-    }
+def to_tsquery(clauses: list[list[str]], negated: list[str], *, relaxed: bool = False) -> str:
+    """The tsquery (as text) for parsed terms. relaxed: any one positive term matches."""
+    params: list[str] = []
+
+    def term(t: str) -> str:
+        params.append(t)
+        return PREFIX_TERM
+
+    budget = MAX_TERMS
+    kept: list[list[str]] = []
+    for clause in clauses:
+        if budget <= 0:
+            break
+        kept.append(clause[:budget])
+        budget -= len(kept[-1])
+    if relaxed:
+        alternatives = [t for clause in kept for t in clause]
+        parts = ["(" + " || ".join(term(t) for t in alternatives) + ")"] if alternatives else []
+    else:
+        parts = ["(" + " || ".join(term(t) for t in clause) + ")" for clause in kept]
+    parts += [f"!!({term(t)})" for t in negated[:4]]
+    if not parts:
+        return ""
+    with connection.cursor() as cur:
+        cur.execute(f"SELECT ({' && '.join(parts)})::text", params)
+        return cur.fetchone()[0] or ""
 
 
-def index_one(tender) -> None:
-    client().index(index=settings.ES_INDEX, id=str(tender.id), document=to_doc(tender))
+def exact_ids(q: str) -> tuple[int, ...]:
+    """Tenders whose tender ID or reference number is exactly the query (case-insensitive)."""
+    q = q.strip().strip('"').strip()
+    if len(q) < 3 or any(c.isspace() for c in q):
+        return ()
+    rows = Tender.objects.filter(Q(source_tender_id__iexact=q) | Q(ref_no__iexact=q))
+    return tuple(rows.order_by("id").values_list("id", flat=True)[:20])
 
 
-def delete_one(tender_id: int) -> None:
-    with contextlib.suppress(NotFoundError):
-        client().delete(index=settings.ES_INDEX, id=str(tender_id))
+# --- typo correction --------------------------------------------------------------------
+
+_CORRECT_SQL = """
+WITH q(word) AS (SELECT DISTINCT unnest(%s::text[]))
+SELECT q.word, (
+    SELECT c.word FROM (
+        SELECT w.word, w.ndoc FROM tender_word w ORDER BY w.word <-> q.word LIMIT 100
+    ) c
+    WHERE levenshtein_less_equal(c.word, q.word, 2)
+          <= CASE WHEN length(q.word) >= 6 THEN 2 ELSE 1 END
+    ORDER BY levenshtein_less_equal(c.word, q.word, 2), c.ndoc DESC, c.word
+    LIMIT 1
+)
+FROM q
+WHERE cardinality(ts_lexize('english_stem', q.word)) > 0  -- not a stop word
+  -- unknown: no indexed word starts with it, or with its stem ("roads" -> "road")
+  AND NOT EXISTS (
+      SELECT 1 FROM tender_word w WHERE w.word >= q.word AND w.word < q.word || '{'
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM tender_word w
+      WHERE w.word >= (ts_lexize('english_stem', q.word))[1]
+        AND w.word < (ts_lexize('english_stem', q.word))[1] || '{'
+  )
+"""
 
 
-def bulk_index(tenders) -> int:
-    actions = (
-        {"_index": settings.ES_INDEX, "_id": str(t.id), "_source": to_doc(t)} for t in tenders
+def correct(q: str) -> str:
+    """q with each word that occurs nowhere in the data replaced by the closest word that
+    does, if one is close enough. Only plain a-z words of 3+ letters are corrected."""
+    words = sorted(
+        {w.lower() for w in _WORD.findall(q) if len(w) >= 3 and w.isascii() and w.isalpha()}
+        - {"or"}
     )
-    ok, _ = helpers.bulk(client(), actions, chunk_size=500, refresh="wait_for")
-    return ok
+    if not words:
+        return q
+    with connection.cursor() as cur:
+        cur.execute(_CORRECT_SQL, [words])
+        fixes = {word: fix for word, fix in cur.fetchall() if fix}
+    if not fixes:
+        return q
+    return _WORD.sub(lambda m: fixes.get(m.group(0).lower(), m.group(0)), q)
 
 
-def similar(tender, size: int = 6) -> list[int]:
-    """Open tenders like this one: similar title words *within the same sector*.
-
-    Without the sector filter, rare words like the buyer's name in the title ("FACT
-    Udyogamandal") dominate, and "similar" becomes "same buyer, any kind of work".
-    """
-    ids: list[int] = []
-    if tender.sector and tender.sector != "other":
-        ids = _similar(tender, size, [{"term": {"sector": tender.sector}}])
-    if len(ids) < size:
-        ids += [i for i in _similar(tender, size, []) if i not in ids][: size - len(ids)]
-    return ids
+# --- querysets --------------------------------------------------------------------------
 
 
-def _similar(tender, size: int, extra_filters: list) -> list[int]:
-    resp = client().search(
-        index=settings.ES_INDEX,
-        size=size,
-        source=False,
-        query={
-            "bool": {
-                "must": [
-                    {
-                        "more_like_this": {
-                            "fields": ["title"],
-                            "like": [{"_index": settings.ES_INDEX, "_id": str(tender.id)}],
-                            "min_term_freq": 1,
-                            "min_doc_freq": 2,
-                            "max_query_terms": 20,
-                        }
-                    }
-                ],
-                "filter": [{"range": {"closes_at": {"gte": "now"}}}, *extra_filters],
-            }
-        },
-    )
-    return [int(h["_id"]) for h in resp["hits"]["hits"]]
+def _text_condition(text: TextMatch):
+    if not text.tsquery and not text.exact:
+        return Q(pk__in=[])
+    sql, params = [], []
+    if text.tsquery:
+        sql.append(f"{VECTOR} @@ %s::tsquery")
+        params.append(text.tsquery)
+    if text.exact:
+        sql.append("tender.id = ANY(%s)")
+        params.append(list(text.exact))
+    return RawSQL("(" + " OR ".join(sql) + ")", params, output_field=BooleanField())
 
 
-def text_query(q: str, *, relaxed: bool = False) -> dict:
-    """Ranking, highest first: every word in the title (stemmed, then with typos) ->
-    every word as a title prefix -> most words anywhere (buyer, location, ...).
-
-    Without the title-first clauses a rare word in a buyer name ("Estate Maintenance
-    Section") outranks tenders that are actually about maintenance. relaxed=True is the
-    fallback when nothing matches: any one word is enough.
-    """
-    loose = {
-        "multi_match": {
-            "query": q,
-            "fields": ["title.plain^2", "buyer_text", "location", "org_chain^0.5"],
-            "fuzziness": "AUTO",
-            "prefix_length": 1,
-            "minimum_should_match": "1" if relaxed else "2<75%",
-        }
-    }
-    return {
-        "bool": {
-            "should": [
-                {"match": {"title": {"query": q, "operator": "and", "boost": 4}}},
-                {
-                    "match": {
-                        "title.plain": {
-                            "query": q,
-                            "fuzziness": "AUTO",
-                            "prefix_length": 1,
-                            "operator": "and",
-                            "boost": 3,
-                        }
-                    }
-                },
-                {"match": {"title.auto": {"query": q, "operator": "and", "boost": 2}}},
-                loose,
-                {"term": {"source_tender_id": {"value": q, "boost": 20}}},
-                {"term": {"ref_no": {"value": q, "boost": 20}}},
-            ],
-            "minimum_should_match": 1,
-        }
-    }
-
-
-FACET_FIELDS = ("state", "sector", "category", "value_range")
-
-
-def facet_filters(params: dict) -> dict[str, dict]:
-    """Filters that belong to a facet group, keyed by that group."""
-    out: dict[str, dict] = {}
-    for field in ("state", "sector", "category"):
-        if params.get(field):
-            out[field] = {"term": {field: params[field]}}
-    rng = {}
-    if params.get("min_value") is not None:
-        rng["gte"] = float(params["min_value"])
-    if params.get("max_value") is not None:
-        rng["lte"] = float(params["max_value"])
-    if rng:
-        out["value_range"] = {"range": {"value_inr": rng}}
-    return out
-
-
-def build_query(params: dict, *, relaxed: bool = False) -> dict:
-    """Text query plus the filters that are *not* facets. Facet filters go into
-    post_filter (see _search) so each facet can be counted without its own filter."""
-    must, filters = [], []
-    q = (params.get("q") or "").strip()
-    if q:
-        must.append(text_query(q, relaxed=relaxed))
+def filtered(params: dict, text: TextMatch | None, *, skip: tuple[str, ...] = ()) -> QuerySet:
+    """Tenders matching the text and every filter except the parameters in `skip`."""
+    qs = Tender.objects.all()
+    if text is not None:
+        qs = qs.filter(_text_condition(text))
+    for field in ("state", "sector", "category", "source"):
+        if params.get(field) and field not in skip:
+            qs = qs.filter(**{field: params[field]})
     if params.get("pin"):
-        filters.append({"prefix": {"pincode": params["pin"]}})
+        qs = qs.filter(pincode__startswith=params["pin"])
     if params.get("buyer"):
-        filters.append({"term": {"buyer_id": int(params["buyer"])}})
-    if params.get("source"):
-        filters.append({"term": {"source": params["source"]}})
+        qs = qs.filter(buyer_entity_id=params["buyer"])
+    if params.get("min_value") is not None and "min_value" not in skip:
+        qs = qs.filter(value_inr__gte=params["min_value"])
+    if params.get("max_value") is not None and "max_value" not in skip:
+        qs = qs.filter(value_inr__lte=params["max_value"])
     if params.get("closes_before"):
-        filters.append({"range": {"closes_at": {"lte": params["closes_before"]}}})
+        qs = qs.filter(closes_at__lte=params["closes_before"])
     if params.get("closes_after"):
-        filters.append({"range": {"closes_at": {"gte": params["closes_after"]}}})
-    return {"bool": {"must": must or [{"match_all": {}}], "filter": filters}}
+        qs = qs.filter(closes_at__gte=params["closes_after"])
+    return qs
 
 
-def _facet_aggs(ff: dict[str, dict]) -> dict:
-    """Disjunctive facets: each group is counted with every *other* group's filter
-    applied, so after picking "Roads" the sector list still shows the other sectors."""
-    inner = {
-        "state": {"terms": {"field": "state", "size": 40}},
-        "sector": {"terms": {"field": "sector", "size": 20}},
-        "category": {"terms": {"field": "category", "size": 20}},
-        "value_range": {"range": {"field": "value_inr", "ranges": VALUE_RANGES}},
+def ordered(qs: QuerySet, params: dict, text: TextMatch | None) -> QuerySet:
+    sort = params.get("sort") or "relevance"
+    if sort in ORDER:
+        return qs.order_by(*ORDER[sort])
+    if text is None or not (text.tsquery or text.exact):
+        return qs.order_by(*ORDER["closing"])
+    keys = []
+    if text.exact:
+        qs = qs.annotate(
+            _exact=RawSQL("tender.id = ANY(%s)", [list(text.exact)], output_field=BooleanField())
+        )
+        keys.append(F("_exact").desc())
+    if text.tsquery:
+        qs = qs.annotate(_rank=RawSQL(RANK, [text.tsquery], output_field=FloatField()))
+        keys.append("-_rank")
+    return qs.order_by(*keys, "closes_at", "id")
+
+
+def match(params: dict) -> TextMatch | None:
+    """Pick the matching stage for params["q"] (see the module docstring); None without q."""
+    q = (params.get("q") or "").strip()
+    if not q:
+        return None
+    exact = exact_ids(q)
+    clauses, negated = parse(q)
+    strict = TextMatch(to_tsquery(clauses, negated), exact)
+    if filtered(params, strict).exists():
+        return strict
+
+    fixed = correct(q)
+    if fixed != q:
+        clauses, negated = parse(fixed)
+        text = TextMatch(to_tsquery(clauses, negated), exact, corrected=fixed)
+        if filtered(params, text).exists():
+            return text
+    if sum(len(c) for c in clauses) > 1:
+        return TextMatch(
+            to_tsquery(clauses, negated, relaxed=True),
+            exact,
+            relaxed=True,
+            corrected=fixed if fixed != q else None,
+        )
+    return strict
+
+
+def queryset(params: dict) -> QuerySet:
+    """Every tender search() would list, in the same order (for exports)."""
+    text = match(params)
+    return ordered(filtered(params, text), params, text).select_related("buyer_entity")
+
+
+def facets(params: dict, text: TextMatch | None) -> dict[str, list[dict]]:
+    def terms(field: str) -> list[dict]:
+        qs = filtered(params, text, skip=FACET_PARAMS[field]).exclude(**{field: ""})
+        rows = qs.values(field).annotate(n=Count("id")).order_by("-n", field)[:FACET_SIZE]
+        return [{"key": r[field], "count": r["n"]} for r in rows]
+
+    def in_range(lo, hi) -> Q:
+        cond = Q(value_inr__isnull=False)
+        if lo is not None:
+            cond &= Q(value_inr__gte=lo)
+        if hi is not None:
+            cond &= Q(value_inr__lt=hi)
+        return cond
+
+    base = filtered(params, text, skip=FACET_PARAMS["value_range"])
+    counts = base.aggregate(
+        **{key: Count("id", filter=in_range(lo, hi)) for key, lo, hi in VALUE_RANGES}
+    )
+    return {
+        "state": terms("state"),
+        "sector": terms("sector"),
+        "category": terms("category"),
+        "value_range": [{"key": key, "count": counts[key]} for key, _, _ in VALUE_RANGES],
     }
-    aggs = {}
-    for name, agg in inner.items():
-        others = [f for k, f in ff.items() if k != name]
-        aggs[name] = {"filter": {"bool": {"filter": others}}, "aggs": {"b": agg}}
-    return aggs
 
 
 def search(params: dict, *, page: int = 1, page_size: int = 20) -> dict:
-    res = _search(params, page, page_size, relaxed=False)
-    q = (params.get("q") or "").strip()
-    if res["total"] == 0 and len(q.split()) > 1:
-        res = _search(params, page, page_size, relaxed=True)
-        res["relaxed"] = True
-    return res
+    """One page of results plus facets.
 
-
-def _search(params: dict, page: int, page_size: int, *, relaxed: bool) -> dict:
-    sort_by = params.get("sort") or "relevance"
-    if sort_by == "newest":
-        sort = [{"published_at": "desc"}]
-    elif sort_by == "value":
-        sort = [{"value_inr": {"order": "desc", "missing": "_last"}}, {"closes_at": "asc"}]
-    elif sort_by == "closing" or not params.get("q"):
-        sort = [{"closes_at": "asc"}]
-    else:
-        sort = [{"_score": "desc"}, {"closes_at": "asc"}]
-    ff = facet_filters(params)
-    resp = client().search(
-        index=settings.ES_INDEX,
-        query=build_query(params, relaxed=relaxed),
-        post_filter={"bool": {"filter": list(ff.values())}},
-        from_=(page - 1) * page_size,
-        size=page_size,
-        sort=sort,
-        track_total_hits=True,
-        source=False,
-        aggs=_facet_aggs(ff),
-    )
-    aggs = resp["aggregations"]
+    Returns {"total", "results": [Tender], "ids", "relaxed", "corrected", "facets"}.
+    """
+    text = match(params)
+    qs = filtered(params, text)
+    total = qs.count()
+    start = (page - 1) * page_size
+    rows = list(ordered(qs, params, text).select_related("buyer_entity")[start : start + page_size])
     return {
-        "total": resp["hits"]["total"]["value"],
-        "ids": [int(h["_id"]) for h in resp["hits"]["hits"]],
-        "relaxed": False,
-        "facets": {
-            name: [{"key": b["key"], "count": b["doc_count"]} for b in aggs[name]["b"]["buckets"]]
-            for name in FACET_FIELDS
-        },
+        "total": total,
+        "results": rows,
+        "ids": [t.pk for t in rows],
+        "relaxed": bool(text and text.relaxed),
+        "corrected": text.corrected if text else None,
+        "facets": facets(params, text),
     }
+
+
+def similar(tender: Tender, size: int = 6) -> list[Tender]:
+    """Open tenders like this one: the same sector first, by title similarity (pg_trgm);
+    then other sectors' tenders whose titles are similar enough (the `%` operator).
+
+    Same sector first because the rare words of a title are often the buyer's name
+    ("FACT Udyogamandal"), and "similar" would otherwise mean "same buyer, any work".
+    """
+    base = (
+        Tender.objects.select_related("buyer_entity")
+        .filter(closes_at__gte=timezone.now())
+        .exclude(pk=tender.pk)
+    )
+    score = RawSQL("similarity(tender.title, %s)", [tender.title], output_field=FloatField())
+    rows: list[Tender] = []
+    if tender.sector and tender.sector != "other":
+        same = base.filter(sector=tender.sector).annotate(_sim=score)
+        rows = list(same.order_by("-_sim", "closes_at", "id")[:size])
+    if len(rows) < size:
+        alike = RawSQL("tender.title %% %s", [tender.title], output_field=BooleanField())
+        others = base.exclude(pk__in=[r.pk for r in rows]).filter(alike).annotate(_sim=score)
+        rows += list(others.order_by("-_sim", "closes_at", "id")[: size - len(rows)])
+    return rows
+
+
+def refresh_words() -> None:
+    """Rebuild the word list typo correction draws from (after crawls add tenders)."""
+    with connection.cursor() as cur:
+        cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY tender_word")

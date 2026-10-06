@@ -23,6 +23,19 @@ def test_crawl_twice_same_rows_zero_duplicates(portal):
     assert Tender.objects.values("source", "source_tender_id").distinct().count() == 7
 
 
+def test_zero_detail_retention_drops_unchanged_refetches(portal, settings):
+    settings.CRAWLER = {**settings.CRAWLER, "RAW_DETAIL_RETENTION_DAYS": 0}
+    pipeline.run_sync("central", mode="full")
+    run2 = pipeline.run_sync("central", mode="full")
+    assert run2.unchanged == 7
+    assert not RawPage.objects.filter(crawl_run=run2, kind="detail").exists()
+    # Items point at the page each tender was loaded from.
+    items = dict(
+        CrawlItem.objects.filter(crawl_run=run2).values_list("source_tender_id", "raw_page")
+    )
+    assert items == dict(Tender.objects.values_list("source_tender_id", "raw_page"))
+
+
 def test_raw_pages_are_stored_before_parsing(portal):
     run = pipeline.run_sync("central", mode="full")
     kinds = list(RawPage.objects.filter(crawl_run=run).values_list("kind", flat=True))

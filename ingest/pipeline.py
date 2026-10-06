@@ -186,6 +186,21 @@ def record_outcome(
     )
 
 
+def record_loaded(run_id: int, tender_id: str, page_id: int, result) -> None:
+    """record_outcome for a loaded detail page. With RAW_DETAIL_RETENTION_DAYS=0 an
+    unchanged re-fetch is not kept: the item points at the page the tender was loaded
+    from instead, so a full crawl does not store a second copy of every tender."""
+    kept = page_id
+    if result.outcome == "unchanged" and settings.CRAWLER["RAW_DETAIL_RETENTION_DAYS"] == 0:
+        current = (
+            Tender.objects.filter(pk=result.tender_id).values_list("raw_page_id", flat=True).first()
+        )
+        kept = current or page_id
+    record_outcome(run_id, tender_id, result.outcome, kept)
+    if kept != page_id:
+        RawPage.objects.filter(pk=page_id).delete()
+
+
 def maybe_finalize(run_id: int, *, force: bool = False) -> CrawlRun | None:
     """Close the run once no item is pending. Safe to call concurrently and repeatedly."""
     with transaction.atomic():
@@ -296,7 +311,7 @@ def run_sync(
                 record_outcome(run.pk, job.tender_id, CrawlItem.Outcome.FAILED)
                 continue
             result = load_detail_page(page)
-            record_outcome(run.pk, job.tender_id, result.outcome, page.pk)
+            record_loaded(run.pk, job.tender_id, page.pk, result)
     except Exception as exc:
         CrawlRun.objects.filter(pk=run.pk).update(
             status=CrawlRun.Status.FAILED, error=repr(exc), finished=timezone.now()
