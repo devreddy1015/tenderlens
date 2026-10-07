@@ -316,7 +316,7 @@ LOGGING = {
 
 # --- Copilot ----------------------------------------------------------------
 # Empty values in .env count as unset ("or" defaults), so .env.example can list every key.
-# Any OpenAI-compatible server: llama.cpp (default, `llm/`), Ollama, vLLM. Swapping the model
+# Any OpenAI-compatible server: llama.cpp (default), Ollama, vLLM. Swapping the model
 # (CPU <-> GPU <-> fine-tuned) means changing LLM_BASE_URL / LLM_MODEL only.
 LLM_BASE_URL = (env("LLM_BASE_URL") or "http://localhost:8081/v1").rstrip("/")
 LLM_MODEL = env("LLM_MODEL") or "tenderlens-qwen3.5-4b"

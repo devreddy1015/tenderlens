@@ -133,7 +133,7 @@ Registration is free. Until it arrives, keep the placeholder and do not advertis
 Changing the prefix later changes every ocid.
 
 **Copilot LLM.** Choose one:
-- *CPU on the same box:* download the GGUF into `llm/models/` (llm/README.md), then set
+- *CPU on the same box:* put the GGUF (`Qwen3.5-4B-Q4_K_M.gguf`) in `llm/models/`, then set
   `COMPOSE_PROFILES=llm` and `LLM_BASE_URL=http://llm:8080/v1`.
 - *Remote GPU:* set `LLM_BASE_URL=http://<gpu-host>:8080/v1` and leave the profile off. The GPU
   variant of the service is at the bottom of `deploy/llm/compose.llm.yml`.

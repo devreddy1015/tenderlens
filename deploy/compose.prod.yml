@@ -178,7 +178,7 @@ services:
   # Self-hosted Copilot LLM (merged from deploy/llm/compose.llm.yml): llama.cpp's
   # OpenAI-compatible server on CPU. Enabled with COMPOSE_PROFILES=llm in .env, then
   # LLM_BASE_URL=http://llm:8080/v1. Without it the Copilot answers extractively.
-  # Download the GGUF first (llm/README.md); GPU box: see docs/DEPLOY.md "GPU".
+  # Put the GGUF in llm/models first (not on GitHub); GPU box: see docs/DEPLOY.md "GPU".
   llm:
     profiles: ["llm"]
     # Pin a digest after the first deploy (docker image inspect) so an upstream chat-template

@@ -1,9 +1,9 @@
 """The copilot prompt for the self-hosted tender LLM.
 
-Copied from llm/prompt.py (the llm-kit stage tuned it; llm/ is not a Django app, so it cannot
-be imported from here). The same prompt builds the fine-tuning set and is used to evaluate
-every model: keep the two copies identical, and re-run `llm/build_dataset.py` and
-`llm/eval_llm.py` after changing either.
+Copied from the LLM kit's prompt.py (the kit tuned it; it is kept off GitHub, next to the
+repository, so it cannot be imported from here). The same prompt builds the fine-tuning set and
+is used to evaluate every model: keep the two copies identical, and re-run the kit's
+build_dataset.py and eval_llm.py after changing either.
 """
 
 import re

@@ -15,7 +15,7 @@
 # Django talks to it with LLM_BASE_URL=http://llm:8080/v1 (inside compose) or
 # http://127.0.0.1:8081/v1 (from the host) and LLM_MODEL=tenderlens-qwen3.5-4b.
 # Swap models (e.g. the fine-tuned one) by changing LLM_GGUF and LLM_ALIAS; nothing else changes.
-# See llm/README.md for the model choice, the measured speed and the RAM budget.
+# The LLM kit (kept off GitHub) has the model choice, the measured speed and the RAM budget.
 
 services:
   llm:
@@ -65,7 +65,7 @@ services:
     mem_limit: 5g
 
   # GPU variant (NVIDIA, needs the driver + nvidia-container-toolkit on the host; see
-  # llm/README.md "GPU"). Replace the `llm` service above with this one:
+  # the LLM kit notes, "GPU"). Replace the `llm` service above with this one:
   #
   # llm:
   #   image: ghcr.io/ggml-org/llama.cpp:server-cuda

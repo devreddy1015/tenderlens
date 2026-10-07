@@ -47,7 +47,7 @@ React 19 + TypeScript + Tailwind 4 + TanStack Query · Docker · Caddy
 | [docs/SOURCE_NOTES.md](docs/SOURCE_NOTES.md) | The 35 portals, rejected ones, why award data is not collected, cross-portal duplicates |
 | [docs/SAAS.md](docs/SAAS.md) | Workspaces, pipeline, calendar, recommendations, API keys, exports, billing |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Production runbook: VPS, Caddy, backups, monitoring, monthly cost |
-| [llm/README.md](llm/README.md) | Model choice, serving, prompt, QLoRA fine-tuning kit, LLM evaluation |
+| LLM kit (not on GitHub) | Model choice, QLoRA fine-tuning, GGUF export, LLM evaluation. Kept on the founder's disk next to the repo (`../tenderlens-llm`, linked as `llm/`) |
 | [docs/INTERVIEW_NOTES.md](docs/INTERVIEW_NOTES.md) | The non-obvious engineering decisions, explained |
 
 ## Quickstart (development)
@@ -72,7 +72,7 @@ is an optional extra so the Vercel build stays under its 500 MB function limit),
 Settings come from the process environment (not from `.env`), so export `DJANGO_DEBUG=true
 DEV_LOGIN_ENABLED=true` for the any-email dev sign-in, and `CELERY_TASK_ALWAYS_EAGER=true`
 if no worker is running. The Copilot's LLM is optional: start it with
-`COMPOSE_PROFILES=llm` or see [llm/README.md](llm/README.md); without it, answers are
+`COMPOSE_PROFILES=llm` (needs the model file, e.g. `Qwen3.5-4B-Q4_K_M.gguf`, in `llm/models/`); without it, answers are
 extractive. The frontend dev server (`npm run dev` in `frontend/`) proxies `/api` to
 `localhost:8000`. If the host's node is broken, use
 `docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD/frontend":/app -w /app node:22-bookworm-slim npm …`.
