@@ -52,11 +52,11 @@ jobs:
       - if: steps.cfg.outputs.skip != 'true'
         run: uv sync --frozen --no-dev
       - if: steps.cfg.outputs.skip != 'true'
-        run: uv run python manage.py migrate --noinput
-      - if: steps.cfg.outputs.skip != 'true'
         name: Prune old rows
         # Also before the crawl, so a database that hit its size limit frees space first.
         run: uv run python manage.py prune
+      - if: steps.cfg.outputs.skip != 'true'
+        run: uv run python manage.py migrate --noinput
       - if: steps.cfg.outputs.skip != 'true'
         name: Crawl
         run: |

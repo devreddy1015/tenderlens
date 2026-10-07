@@ -207,10 +207,10 @@ def prune_raw_pages() -> int:
             .exclude(pk__in=Tender.objects.filter(raw_page__isnull=False).values("raw_page"))
             .exclude(pk__in=Quarantine.objects.filter(raw_page__isnull=False).values("raw_page"))
         )
-        # Items of unchanged re-fetches are deleted with their page (run totals stay on
-        # crawl_run) rather than set to NULL: an UPDATE needs free space, and a database at
-        # its size limit has none, so pruning must free space without writing new rows.
-        CrawlItem.objects.filter(raw_page__in=old, outcome=CrawlItem.Outcome.UNCHANGED).exclude(
+        # Items of finished runs are deleted with their page (run totals stay on crawl_run)
+        # rather than set to NULL: an UPDATE needs free space, and a database at its size
+        # limit has none, so pruning must free space without writing new rows.
+        CrawlItem.objects.filter(raw_page__in=old).exclude(
             crawl_run__status=CrawlRun.Status.RUNNING
         ).delete()
         n, _ = old.delete()

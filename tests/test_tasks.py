@@ -178,7 +178,7 @@ def test_prune_detail_retention_keeps_pages_still_referenced(make_page, settings
     assert Tender.objects.get().raw_page_id == current.pk
 
 
-def test_prune_deletes_unchanged_items_with_their_page(make_page, settings):
+def test_prune_deletes_finished_items_with_their_page(make_page, settings):
     """Pruning must not UPDATE crawl items: a database at its size limit has no room."""
     from datetime import timedelta
 
@@ -198,10 +198,15 @@ def test_prune_deletes_unchanged_items_with_their_page(make_page, settings):
         CrawlItem.objects.create(
             crawl_run=run, source_tender_id="T", outcome="unchanged", raw_page=refetched
         )
+    CrawlItem.objects.create(
+        crawl_run=done, source_tender_id="T2", outcome="updated", raw_page=refetched
+    )
 
     settings.CRAWLER = {**settings.CRAWLER, "RAW_DETAIL_RETENTION_DAYS": 0}
     assert tasks.prune_raw_pages.apply().get() == 1
-    assert list(CrawlItem.objects.values_list("crawl_run", "raw_page")) == [(running.pk, None)]
+    assert list(
+        CrawlItem.objects.order_by("source_tender_id").values_list("crawl_run", "raw_page")
+    ) == [(running.pk, None)]
 
 
 @pytest.mark.django_db(transaction=True)
