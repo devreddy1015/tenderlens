@@ -132,6 +132,13 @@ def test_health(api, db):
     assert "runs_24h" in body["crawl"] and "open_dead_letters" in body["crawl"]
 
 
+def test_health_without_redis_on_vercel(api, db, settings):
+    settings.REDIS_EXPECTED = False  # VERCEL=1 and no REDIS_URL
+    body = api.get("/health").json()
+    assert body["checks"]["redis"] == "not used"
+    assert body["status"] == "ok"
+
+
 def test_openapi_schema_documents_every_endpoint(api):
     r = api.get("/api/schema/", HTTP_ACCEPT="application/json")
     assert r.status_code == 200

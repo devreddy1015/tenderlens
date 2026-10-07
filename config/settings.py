@@ -197,6 +197,9 @@ SPECTACULAR_SETTINGS = {
 }
 
 REDIS_URL = env("REDIS_URL", "redis://localhost:6379/0")
+# Vercel runs no broker (crawls and beat jobs run in .github/workflows/crawl.yml): there,
+# without a REDIS_URL, /health reports Redis as not used instead of down.
+REDIS_EXPECTED = bool(env("REDIS_URL")) or not env("VERCEL")
 
 # Cache (API throttle counters) in its own Redis database, never the Celery broker's:
 # a cache flush must not be able to delete queued tasks. Hosted Redis URLs often have no

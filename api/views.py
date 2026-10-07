@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import connection
 from django.db.models import Count, Prefetch, Q, Sum
 from django.http import JsonResponse
@@ -168,13 +169,16 @@ def health(request):
         checks["database"] = f"error: {type(exc).__name__}"
         return JsonResponse({"status": "down", "checks": checks}, status=503)
 
-    try:
-        from ingest.tasks import redis_client
+    if not settings.REDIS_EXPECTED:
+        checks["redis"] = "not used"
+    else:
+        try:
+            from ingest.tasks import redis_client
 
-        redis_client().ping()
-        checks["redis"] = "ok"
-    except Exception as exc:
-        checks["redis"] = f"error: {type(exc).__name__}"
+            redis_client().ping()
+            checks["redis"] = "ok"
+        except Exception as exc:
+            checks["redis"] = f"error: {type(exc).__name__}"
 
     since = timezone.now() - timedelta(hours=24)
     runs = CrawlRun.objects.filter(started__gte=since)
@@ -189,7 +193,7 @@ def health(request):
         "open_dead_letters": DeadLetter.objects.filter(resolved=False).count(),
         "quarantined_24h": Quarantine.objects.filter(created_at__gte=since).count(),
     }
-    degraded = any(v != "ok" for v in checks.values())
+    degraded = any(v not in ("ok", "not used") for v in checks.values())
     return Response({"status": "degraded" if degraded else "ok", "checks": checks, "crawl": crawl})
 
 
