@@ -16,7 +16,7 @@ self-hosted LLM: no paid LLM API anywhere in the request path.
 | LLM = any **OpenAI-compatible** endpoint (`LLM_BASE_URL`), default a llama.cpp server running an Apache-2.0 open-weight model (Qwen3 family) as GGUF. Ollama and vLLM work unchanged. | Zero per-token cost; swap CPU ↔ GPU ↔ fine-tuned model by changing two env vars. |
 | Answers are grounded or refused: retrieval → LLM with numbered passages → post-check that every number/date appears in the cited passage (DocIntel's `grounding.py`) → otherwise refusal. When the LLM is down, fall back to **extractive** answers (best passage sentences) rather than failing. | Trust is the product; a wrong EMD amount costs a customer a bid. |
 | **Bid Brief** = deterministic rule-based extraction (EMD, fee, dates, turnover, experience, penalties, documents required…) with page citations; no LLM needed. | Cheapest possible feature with the most value; works on CPU in milliseconds. |
-| Fine-tuning kit lives in `llm/` (own `pyproject.toml`, not installed in the web image): dataset builder → QLoRA (fits an 8 GB RTX 4060) → GGUF export → eval. | Keeps torch-CUDA out of the server image; training runs on the founder's laptop. |
+| Fine-tuning kit lives in `llm/` (own `pyproject.toml`, not installed in the web image; since 2026-10-08 kept off GitHub, on the founder's disk as `../tenderlens-llm`): dataset builder → QLoRA (fits an 8 GB RTX 4060) → GGUF export → eval. | Keeps torch-CUDA out of the server image; training runs on the founder's laptop. |
 | Multi-tenant SaaS: `workspaces` (organisation, members, company profile, bid pipeline, API keys) and `billing` (plans, quotas, Razorpay subscriptions). | "Provide everything to the client". |
 | Production = one VPS with docker compose + Caddy (auto-HTTPS) + nightly `pg_dump` off-site. Until that server exists, the free Vercel + Neon deployment stays live (`vercel.json`, `.github/workflows/crawl.yml`, `docs/DEPLOY.md` "Free hosting on Vercel"): search, alerts, workspaces and billing work there; the Copilot answers extractively (no LLM) and cannot process uploads (no worker). | A proper database without free-tier size hacks, without taking the public site down meanwhile. |
 
@@ -33,7 +33,7 @@ self-hosted LLM: no paid LLM API anywhere in the request path.
 | `copilot/` (new) | documents, chunks, embeddings, hybrid retrieval, LLM client, grounding, bid brief, eligibility | port of `../docintel` |
 | `workspaces/` (new) | Organization, Membership, Invite, BidTrack (pipeline), ApiKey, exports (CSV, OCDS) | |
 | `billing/` (new) | plans, Usage, Subscription, Razorpay checkout + webhook, entitlements | |
-| `llm/` (new, standalone) | fine-tuning kit, serving config, LLM eval | not a Django app |
+| `llm/` (standalone, not on GitHub) | fine-tuning kit, serving config, LLM eval | not a Django app; a link to `../tenderlens-llm` |
 | `frontend/` | React 19 + TS + Tailwind 4 + TanStack Query | |
 | `deploy/` | Dockerfile, compose (dev + prod), Caddy, backups | |
 
@@ -243,4 +243,4 @@ groups the work into reviewable commits).
 **Next steps (in order)**: rebuild the dev stack on the v2 images; provision the VPS and run
 the first full crawls; register an OCDS prefix and the Razorpay plans and webhook; send the
 NIC/GeM data-sharing requests; fix the GPU driver and run the fine-tuning kit against
-`llm/eval_llm.py`; then launch the free plan publicly.
+the kit's eval_llm.py; then launch the free plan publicly.

@@ -87,7 +87,7 @@ services:
     restart: unless-stopped
 
   # Self-hosted Copilot LLM (llama.cpp, CPU), opt-in: `docker compose --profile llm up -d llm`
-  # (needs the GGUF in llm/models, llm/README.md). Django inside compose then uses
+  # (needs the GGUF in llm/models, which is not on GitHub). Django inside compose then uses
   # LLM_BASE_URL=http://llm:8080/v1; from the host it is http://127.0.0.1:8081/v1.
   # Full service definition and the GPU variant: deploy/llm/compose.llm.yml.
   llm:

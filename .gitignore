@@ -13,14 +13,10 @@ scripts/.cache/
 .vercel
 .env*.local
 media/
-# Model weights (GBs): download or build them, never commit them
-llm/models/*.gguf
-
-# LLM kit (llm/): model weights and run outputs are large and reproducible
-llm/models/
+# LLM kit and model weights (GBs): kept off GitHub. The founder's copy lives in
+# ../tenderlens-llm, linked here as llm/ so compose's ./llm/models mounts still work.
+/llm
 *.gguf
-llm/out/
-llm/.venv/
 
 # Bid advisor: raw dataset downloads and trained models (re-creatable: intel_import, intel_train)
 data/intel/raw/

@@ -4,8 +4,8 @@
 #     ollama create tenderlens-qwen3.5-4b -f deploy/llm/Modelfile    # run from the repo root
 #     LLM_BASE_URL=http://127.0.0.1:11434/v1 LLM_MODEL=tenderlens-qwen3.5-4b
 #
-# For a fine-tuned model, llm/export_gguf.py writes the same file next to the new GGUF.
-# The system prompt is not baked in: the copilot sends llm/prompt.py's SYSTEM_PROMPT with
+# For a fine-tuned model, the LLM kit's export_gguf.py writes the same file next to the new GGUF.
+# The system prompt is not baked in: the copilot sends copilot/prompt.py's SYSTEM_PROMPT with
 # every request, so the prompt has one source of truth. Thinking is off: the template opens
 # every assistant turn with an empty <think></think> block, which is what Qwen3.5's own
 # template does for enable_thinking=false.

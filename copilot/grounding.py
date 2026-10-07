@@ -1,5 +1,5 @@
 """Post-check for [n]-cited answers: every number, amount, percentage and date in a sentence
-must appear in the passages that sentence cites. Ported from llm/grounding.py (keep in sync).
+must appear in the passages that sentence cites. Ported from the LLM kit's grounding.py (kept off GitHub; keep in sync).
 
 Fact extraction and normalisation are DocIntel's (`docintel/grounding.py`): "₹16 lakh" matches
 "16,00,000", "7 October 2026" matches "07-Oct-2026", "2.0%" matches "2 %". What is new here is
