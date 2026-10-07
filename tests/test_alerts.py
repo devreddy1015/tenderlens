@@ -167,6 +167,21 @@ def test_create_alert_sends_first_digest(client, loaded):
     assert len(mail.outbox) == 1  # eager Celery in tests
 
 
+def test_create_alert_survives_a_failed_first_digest(client, loaded, monkeypatch):
+    """SMTP or the broker down must not 500 after the alert is saved: the user would retry
+    and fill their alert quota with duplicates (seen in the integration smoke)."""
+    from alerts import tasks
+    from alerts.models import AlertSubscription
+
+    def boom(*a, **k):
+        raise ConnectionRefusedError(111, "Connection refused")
+
+    monkeypatch.setattr(tasks.send_first_digest, "delay", boom)
+    r = client.post("/api/alerts", {"name": "Roads", "sectors": ["roads"]}, format="json")
+    assert r.status_code == 201, r.content
+    assert AlertSubscription.objects.filter(name="Roads").count() == 1
+
+
 def test_alert_validation(client):
     bad = client.post(
         "/api/alerts",

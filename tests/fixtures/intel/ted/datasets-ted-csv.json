@@ -1,0 +1,70 @@
+{
+ "success": true,
+ "result": {
+  "id": "ted-csv",
+  "modified": "2024-01-25",
+  "distributions": [
+   {
+    "title": {
+     "en": "TED - Contract award notices 2008"
+    },
+    "access_url": [
+     "https://data.europa.eu/api/hub/store/data/ted-contract-award-notices-2008.zip"
+    ],
+    "download_url": [
+     "https://data.europa.eu/api/hub/store/data/ted-contract-award-notices-2008.zip"
+    ],
+    "license": {
+     "label": "European Commission reuse notice"
+    }
+   },
+   {
+    "title": {
+     "en": "TED - Contract award notices 2022"
+    },
+    "access_url": [
+     "https://data.europa.eu/api/hub/store/data/ted-contract-award-notices-2022.zip"
+    ],
+    "license": {
+     "label": "Creative Commons Attribution 4.0 International"
+    }
+   },
+   {
+    "title": {
+     "en": "TED - Contract notices 2022"
+    },
+    "access_url": [
+     "https://data.europa.eu/api/hub/store/data/ted-contract-notices-2022.zip"
+    ],
+    "license": {
+     "label": "Creative Commons Attribution 4.0 International"
+    }
+   },
+   {
+    "title": {
+     "en": "TED - Contract award notices 2018-2023"
+    },
+    "access_url": [
+     "https://data.europa.eu/api/hub/store/data/ted-contract-award-notices-2018-2023.zip"
+    ],
+    "license": {
+     "label": "European Commission reuse notice"
+    }
+   },
+   {
+    "title": {
+     "en": "TED - Contract award notices 2006"
+    },
+    "access_url": [
+     "https://data.europa.eu/euodp/repository/ec/dg-grow/mapps/TED%202020/TED%20-%20Contract%20award%20notices%202006.csv.gz"
+    ],
+    "download_url": [
+     "https://data.europa.eu/api/hub/store/data/ted-contract-award-notices-2006.zip"
+    ],
+    "license": {
+     "label": "European Commission reuse notice"
+    }
+   }
+  ]
+ }
+}

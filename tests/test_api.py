@@ -31,7 +31,7 @@ def test_list_paginated(api, loaded):
     assert body["count"] == loaded == 18
     assert len(body["results"]) == 5
     assert body["next"] and body["previous"] is None
-    assert body["search_backend"] == "postgres"  # ES disabled in tests
+    assert body["search_backend"] == "postgres"
     closes = [t["closes_at"] for t in body["results"]]
     assert closes == sorted(closes)
     r2 = api.get(body["next"])
@@ -73,7 +73,7 @@ def test_invalid_params_are_400(api):
     assert api.get("/api/tenders", {"page_size": 1000}).status_code == 400
 
 
-def test_facets_from_postgres_fallback(api, loaded):
+def test_facets_from_postgres(api, loaded):
     facets = api.get("/api/tenders").json()["facets"]
     assert sum(b["count"] for b in facets["category"]) == loaded
     assert {b["key"] for b in facets["value_range"]} == {
@@ -126,8 +126,9 @@ def test_health(api, db):
     assert r.status_code == 200
     body = r.json()
     assert body["checks"]["database"] == "ok"
-    assert body["checks"]["elasticsearch"] == "unavailable"
-    assert body["status"] == "degraded"
+    assert body["checks"]["redis"] == "ok"
+    assert "elasticsearch" not in body["checks"]  # Postgres is the search engine
+    assert body["status"] == "ok"
     assert "runs_24h" in body["crawl"] and "open_dead_letters" in body["crawl"]
 
 
@@ -139,3 +140,18 @@ def test_openapi_schema_documents_every_endpoint(api):
     paths = json.loads(r.content)["paths"].keys()
     for p in ("/api/tenders", "/api/tenders/{id}", "/api/buyers/{id}", "/api/stats", "/health"):
         assert p in paths, p
+
+
+def test_openapi_schema_has_no_warnings():
+    """`check --deploy` (the production migrate gate) fails on drf-spectacular warnings, so
+    enum-name and operationId collisions must stay resolved."""
+    from drf_spectacular.drainage import GENERATOR_STATS
+    from drf_spectacular.generators import SchemaGenerator
+
+    GENERATOR_STATS.reset()
+    schema = SchemaGenerator().get_schema(request=None, public=True)
+    assert not GENERATOR_STATS._warn_cache, list(GENERATOR_STATS._warn_cache)
+    enums = schema["components"]["schemas"]
+    assert "MembershipRoleEnum" in enums and "BidTrackStatusEnum" in enums
+    ops = [op["operationId"] for item in schema["paths"].values() for op in item.values()]
+    assert len(ops) == len(set(ops))

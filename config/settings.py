@@ -38,6 +38,10 @@ INSTALLED_APPS = [
     "accounts",
     "alerts",
     "feedback",
+    "copilot",
+    "workspaces",
+    "billing",
+    "intel",  # bid advisor stage: historical awards, price model (docs/BID_ADVISOR.md)
 ]
 
 MIDDLEWARE = [
@@ -69,8 +73,8 @@ TEMPLATES = [
     }
 ]
 
-# Hosted Postgres (Neon via the Vercel Marketplace) provides a single DATABASE_URL;
-# docker-compose and local runs use the POSTGRES_* variables.
+# A managed Postgres usually provides a single DATABASE_URL; docker-compose and local runs
+# use the POSTGRES_* variables.
 if env("DATABASE_URL"):
     _db_url = urlsplit(env("DATABASE_URL"))
     _db = {
@@ -90,8 +94,7 @@ else:
         "PORT": env("POSTGRES_PORT", "5432"),
         "OPTIONS": {},
     }
-# Fail fast when the database is unreachable instead of waiting ~2 min for TCP; long enough
-# for a scaled-to-zero Neon compute to wake up.
+# Fail fast when the database is unreachable instead of waiting ~2 min for TCP.
 _db["OPTIONS"].setdefault("connect_timeout", 10)
 DATABASES = {
     "default": {
@@ -99,7 +102,7 @@ DATABASES = {
         **_db,
         "CONN_MAX_AGE": 60,
         "CONN_HEALTH_CHECKS": True,
-        # PgBouncer in transaction mode (Neon's "-pooler" host) cannot keep server-side cursors.
+        # PgBouncer in transaction mode (a "-pooler" host) cannot keep server-side cursors.
         "DISABLE_SERVER_SIDE_CURSORS": "-pooler" in _db["HOST"],
         # Parallel test runs (CI shards, several builders on one machine) each need their own
         # test database: TEST_DB_NAME=test_<name> uv run pytest.
@@ -185,6 +188,12 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "Search public Indian government tenders crawled from NIC GePNIC portals.",
     "VERSION": "0.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # Two "role" and several "status" choice sets share a field name; name them explicitly so
+    # the schema (and `check --deploy`, which the production entrypoint gates on) stays clean.
+    "ENUM_NAME_OVERRIDES": {
+        "MembershipRoleEnum": "workspaces.models.Membership.Role",
+        "BidTrackStatusEnum": "workspaces.models.BidTrack.Status",
+    },
 }
 
 REDIS_URL = env("REDIS_URL", "redis://localhost:6379/0")
@@ -236,16 +245,7 @@ CELERY_TASK_ROUTES = {
 CELERY_TASK_DEFAULT_QUEUE = "default"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULE = {
-    "hourly-incremental-crawl": {
-        "task": "ingest.tasks.start_crawl",
-        "schedule": crontab(minute=5),
-        "kwargs": {"mode": "incremental"},
-    },
-    "nightly-full-crawl": {
-        "task": "ingest.tasks.start_crawl",
-        "schedule": crontab(minute=30, hour=2),
-        "kwargs": {"mode": "full"},
-    },
+    # Per-source crawl entries are added below the CRAWLER section (ingest/schedule.py).
     "close-stale-runs": {
         "task": "ingest.tasks.close_stale_runs",
         "schedule": crontab(minute="*/15"),
@@ -263,6 +263,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "ingest.tasks.prune_crawl_items",
         "schedule": crontab(minute=10, hour=4),
     },
+    "refresh-search-words": {  # typo-correction word list, after the hourly crawl
+        "task": "tenders.tasks.refresh_search_words",
+        "schedule": crontab(minute=40),
+    },
 }
 
 # --- Crawler ----------------------------------------------------------------
@@ -274,8 +278,8 @@ CRAWLER = {
     "MIN_INTERVAL_SECONDS": float(env("CRAWLER_MIN_INTERVAL", "1.0")),
     "TIMEOUT_SECONDS": float(env("CRAWLER_TIMEOUT", "30")),
     "MAX_ATTEMPTS": int(env("CRAWLER_MAX_ATTEMPTS", "4")),
-    # Comma-separated source keys from ingest/sources.py
-    "SOURCES": env("CRAWLER_SOURCES", "central").split(","),
+    # Comma-separated source keys from ingest/sources.py; "all" = every enabled source.
+    "SOURCES": env("CRAWLER_SOURCES", "all").split(","),
     # Listing/index pages are only needed for change detection; details are kept.
     "RAW_LISTING_RETENTION_DAYS": int(env("RAW_LISTING_RETENTION_DAYS", "7")),
     # Unset: keep every detail page. Set (small hosted databases): after this many days,
@@ -290,11 +294,11 @@ CRAWLER = {
         int(env("CRAWL_ITEM_RETENTION_DAYS")) if env("CRAWL_ITEM_RETENTION_DAYS") else None
     ),
 }
+# --- Sources stage: per-source crawls (hourly incremental, nightly full), staggered. An
+# unknown key in CRAWLER_SOURCES fails here, at startup, rather than in the 3 a.m. crawl.
+from ingest.schedule import crawl_beat_schedule  # noqa: E402
 
-# --- Elasticsearch ----------------------------------------------------------
-ES_URL = env("ES_URL", "http://localhost:9200")
-ES_INDEX = env("ES_INDEX", "tenders")
-ES_ENABLED = env_bool("ES_ENABLED", True)
+CELERY_BEAT_SCHEDULE.update(crawl_beat_schedule(CRAWLER["SOURCES"]))
 
 LOGGING = {
     "version": 1,
@@ -304,6 +308,107 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
     "loggers": {
         "httpx": {"level": "WARNING"},
-        "elastic_transport": {"level": "WARNING"},
     },
 }
+
+# --- Copilot ----------------------------------------------------------------
+# Empty values in .env count as unset ("or" defaults), so .env.example can list every key.
+# Any OpenAI-compatible server: llama.cpp (default, `llm/`), Ollama, vLLM. Swapping the model
+# (CPU <-> GPU <-> fine-tuned) means changing LLM_BASE_URL / LLM_MODEL only.
+LLM_BASE_URL = (env("LLM_BASE_URL") or "http://localhost:8081/v1").rstrip("/")
+LLM_MODEL = env("LLM_MODEL") or "tenderlens-qwen3.5-4b"
+LLM_API_KEY = env("LLM_API_KEY") or ""  # llama.cpp ignores it unless started with --api-key
+LLM_TIMEOUT_SECONDS = float(env("LLM_TIMEOUT_SECONDS") or "120")
+LLM_MAX_TOKENS = int(env("LLM_MAX_TOKENS") or "700")
+# Multilingual (Hindi + English tender documents), 384 dimensions, runs on CPU.
+EMBEDDING_MODEL = env("EMBEDDING_MODEL") or "intfloat/multilingual-e5-small"
+# A sentence-transformers cross-encoder, e.g. BAAI/bge-reranker-base; empty = no reranking.
+RERANKER_MODEL = env("RERANKER_MODEL") or ""
+# Uploaded tender documents. In production a mounted volume, backed up with the database.
+MEDIA_ROOT = Path(env("MEDIA_ROOT") or BASE_DIR / "media")
+MEDIA_URL = "/media/"
+COPILOT_MAX_UPLOAD_MB = int(env("COPILOT_MAX_UPLOAD_MB") or "25")
+# Uploads above 2.5 MB stream to a temp file instead of memory; the request body may be the
+# largest allowed PDF plus the multipart overhead.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2_621_440
+DATA_UPLOAD_MAX_MEMORY_SIZE = (COPILOT_MAX_UPLOAD_MB + 1) * 1024 * 1024
+
+# --- Workspaces -------------------------------------------------------------
+# OCDS ids (ocid) are "<prefix>-<source>-<native tender ID>". Register a prefix with the Open
+# Contracting Partnership before publishing; the default is for development.
+OCDS_PREFIX = env("OCDS_PREFIX") or "ocds-tenderlens"
+INVITE_MAX_AGE_DAYS = int(env("INVITE_MAX_AGE_DAYS") or "7")
+# REST API keys (`Authorization: Api-Key tl_...`, plan feature "api"): tried before the
+# session so a key request never needs a CSRF token, and rate-limited per key.
+REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] = [
+    "workspaces.auth.ApiKeyAuthentication",
+    *REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"],
+]
+REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"].append("workspaces.auth.ApiKeyRateThrottle")
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["api_key"] = env("API_KEY_RATE_LIMIT") or "600/min"
+# Daily email about tracked tenders closing within 3 days that are not submitted yet.
+CELERY_BEAT_SCHEDULE["pipeline-reminders"] = {
+    "task": "workspaces.tasks.send_pipeline_reminders",
+    "schedule": crontab(minute=0, hour=8),  # 08:00 IST
+}
+
+# --- Billing ----------------------------------------------------------------
+# fake: checkout activates the plan immediately (development, tests). razorpay: real
+# subscriptions through Razorpay Checkout and its signed webhook.
+# Unset, it is "fake" only with DEBUG on: a production server without the variable must
+# never hand out paid plans for free.
+BILLING_PROVIDER = env("BILLING_PROVIDER") or ("fake" if DEBUG else "razorpay")
+RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID") or ""
+RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET") or ""
+RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET") or ""
+# Razorpay plan ids (Dashboard > Subscriptions > Plans), one per paid plan and interval:
+# RAZORPAY_PLAN_PRO_MONTH, RAZORPAY_PLAN_PRO_YEAR, RAZORPAY_PLAN_TEAM_MONTH, ...
+RAZORPAY_PLAN_IDS = {
+    f"{code}_{interval}": env(f"RAZORPAY_PLAN_{code}_{interval}") or ""
+    for code in ("PRO", "TEAM")
+    for interval in ("MONTH", "YEAR")
+}
+
+# --- Production security ----------------------------------------------------
+# DJANGO_PRODUCTION=true (set by deploy/compose.prod.yml) switches on the HTTPS-only settings
+# and refuses to start with a development configuration, so a typo in .env fails the deploy
+# instead of quietly serving free paid plans or session cookies over plain HTTP. Caddy
+# terminates TLS and sends X-Forwarded-Proto (SECURE_PROXY_SSL_HEADER above).
+PRODUCTION = env_bool("DJANGO_PRODUCTION", False)
+if PRODUCTION:
+    from django.core.exceptions import ImproperlyConfigured
+
+    _problems = [
+        msg
+        for bad, msg in (
+            (DEBUG, "DJANGO_DEBUG must be false"),
+            (
+                SECRET_KEY in {"dev-only-insecure-key", "change-me"} or len(SECRET_KEY) < 50,
+                "DJANGO_SECRET_KEY must be a random string of 50+ characters",
+            ),
+            (not SITE_URL.startswith("https://"), "SITE_URL must start with https://"),
+            (BILLING_PROVIDER != "razorpay", "BILLING_PROVIDER must be razorpay"),
+            (
+                not (RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET),
+                "RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET are required",
+            ),
+        )
+        if bad
+    ]
+    if _problems:
+        raise ImproperlyConfigured("Production settings: " + "; ".join(_problems))
+    # The public host always works, even if DJANGO_ALLOWED_HOSTS forgets it; localhost is for
+    # the container healthchecks (gunicorn is not published, and Caddy only routes SITE_ADDRESS).
+    _site_host = urlsplit(SITE_URL).hostname or ""
+    ALLOWED_HOSTS = [h for h in dict.fromkeys([*ALLOWED_HOSTS, _site_host, "localhost"]) if h]
+    SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    # Container healthchecks call gunicorn directly over plain HTTP.
+    SECURE_REDIRECT_EXEMPT = [r"^health$"]
+    SECURE_HSTS_SECONDS = int(env("SECURE_HSTS_SECONDS") or 31_536_000)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
+    # Google sign-in's popup must be able to message the opener.
+    SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin-allow-popups"
+    # HSTS preload is a months-long commitment made by submitting the domain to
+    # hstspreload.org; leave it to the founder rather than send the directive by default.
+    SILENCED_SYSTEM_CHECKS = ["security.W021"]

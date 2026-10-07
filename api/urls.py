@@ -1,10 +1,11 @@
-from django.urls import path
+from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from accounts import views as accounts
 from alerts import views as alerts
 from api import views
 from feedback import views as feedback
+from ingest import views as ingest
 
 urlpatterns = [
     path("tenders", views.TenderList.as_view(), name="tender-list"),
@@ -15,6 +16,7 @@ urlpatterns = [
     path("sectors", views.Sectors.as_view(), name="sectors"),
     path("map", views.MapStats.as_view(), name="map"),
     path("config", views.site_config, name="config"),
+    path("sources", ingest.source_list, name="source-list"),  # sources stage
     path("auth/me", accounts.Me.as_view(), name="auth-me"),
     path("auth/google", accounts.GoogleLogin.as_view(), name="auth-google"),
     path("auth/dev-login", accounts.DevLogin.as_view(), name="auth-dev-login"),
@@ -27,4 +29,8 @@ urlpatterns = [
     path("feedback", feedback.FeedbackCreate.as_view(), name="feedback"),
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
+    # Platform v2 apps own their routes (docs/PLATFORM_V2.md section 3).
+    path("copilot/", include("copilot.urls")),
+    path("billing/", include("billing.urls")),
+    path("", include("workspaces.urls")),  # workspace, pipeline, export, ocds
 ]

@@ -86,3 +86,34 @@ def _create_org(name: str) -> Organization:
                 pass
         slug = f"{base}-{secrets.token_hex(3)}"
     raise RuntimeError("could not find a free organisation slug")
+
+
+def request_org(request) -> Organization:
+    """The organisation a request acts for: an API key's own organisation, otherwise the
+    signed-in user's active one."""
+    from workspaces.models import ApiKey
+
+    if isinstance(request.auth, ApiKey):
+        return request.auth.organization
+    return get_active_org(request.user)
+
+
+def calendar_token(org: Organization, *, rotate: bool = False) -> str:
+    """The organisation's iCal feed token, created on first use; rotate=True replaces it
+    so the old feed URL stops working."""
+    if org.calendar_token and not rotate:
+        return org.calendar_token
+    org.calendar_token = secrets.token_urlsafe(32)
+    org.save(update_fields=["calendar_token"])
+    return org.calendar_token
+
+
+def seats_used(org: Organization) -> int:
+    """Members plus open invites: an invite holds a seat until it is accepted, revoked or
+    expires, so a team cannot invite past its plan and have everyone accept later."""
+    from django.utils import timezone
+
+    pending = org.invites.filter(
+        accepted_at__isnull=True, revoked_at__isnull=True, expires_at__gt=timezone.now()
+    ).count()
+    return org.memberships.count() + pending
