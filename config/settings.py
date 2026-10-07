@@ -325,7 +325,9 @@ EMBEDDING_MODEL = env("EMBEDDING_MODEL") or "intfloat/multilingual-e5-small"
 # A sentence-transformers cross-encoder, e.g. BAAI/bge-reranker-base; empty = no reranking.
 RERANKER_MODEL = env("RERANKER_MODEL") or ""
 # Uploaded tender documents. In production a mounted volume, backed up with the database.
-MEDIA_ROOT = Path(env("MEDIA_ROOT") or BASE_DIR / "media")
+# Vercel (which sets VERCEL=1) can only write to /tmp and runs no worker, so an upload there
+# is kept briefly and marked "processing queue unavailable" instead of failing with a 500.
+MEDIA_ROOT = Path(env("MEDIA_ROOT") or ("/tmp/media" if env("VERCEL") else BASE_DIR / "media"))
 MEDIA_URL = "/media/"
 COPILOT_MAX_UPLOAD_MB = int(env("COPILOT_MAX_UPLOAD_MB") or "25")
 # Uploads above 2.5 MB stream to a temp file instead of memory; the request body may be the

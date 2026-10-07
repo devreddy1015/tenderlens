@@ -21,6 +21,25 @@ Files: `Dockerfile` (targets `app` and `proxy`), `deploy/compose.prod.yml`,
 `deploy/caddy/Caddyfile` (+ `csp.mjs`, which builds the Content-Security-Policy),
 `deploy/gunicorn.conf.py`, `deploy/entrypoint.sh`, `deploy/backup.sh`, `deploy/restore.sh`.
 
+## Free hosting on Vercel (until the VPS is up)
+
+`https://tenderlens-inky.vercel.app` runs the same code without the VPS: Vercel builds the
+React app and the Django API from `main` (`vercel.json`: two services, `/api`, `/admin`,
+`/static` and `/health` go to Django), the database is a free Neon Postgres (512 MB), and
+`.github/workflows/crawl.yml` replaces Celery beat: an hourly incremental crawl of
+`CRAWLER_SOURCES` (repository variable, default `central,mp`), a weekly full one, and the
+non-crawl beat jobs. What does not run there: the LLM (the Copilot answers extractively)
+and the worker (uploaded PDFs are marked "processing queue unavailable").
+
+* Secrets: `DATABASE_URL` in the GitHub repository secrets (the crawl job) and in the Vercel
+  project (the API). Variables: `SITE_URL`, optionally `CRAWLER_SOURCES`, `EMAIL_BACKEND`.
+* Migrations run in the crawl job. Before merging a change whose migrations the live site
+  needs, run the job by hand on that branch: `gh workflow run crawl.yml --ref <branch>
+  -f mode=migrate`.
+* When the database reaches ~460 MB, `manage.py reclaim_space` (first step of every crawl
+  job) truncates the stored HTML and crawl items; tenders, users and alerts stay, and the
+  next crawl fetches pages again. At the 512 MB cap Postgres cannot even run a migration.
+
 ## 1. Choose the server
 
 | Profile | What runs | Minimum | Recommended |

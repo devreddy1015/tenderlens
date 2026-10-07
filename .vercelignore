@@ -3,9 +3,16 @@
 .venv/
 staticfiles/
 backups/
+media/
 scripts/.cache/
 .pytest_cache/
 .ruff_cache/
 frontend/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
+# Not needed to serve the API, and kept out of the 500 MB function bundle: tests and their
+# fixtures, docs, the LLM fine-tuning kit and bid-advisor datasets.
+/tests/
+/docs/
+/llm/
+/data/intel/

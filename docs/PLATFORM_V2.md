@@ -18,7 +18,7 @@ self-hosted LLM: no paid LLM API anywhere in the request path.
 | **Bid Brief** = deterministic rule-based extraction (EMD, fee, dates, turnover, experience, penalties, documents required…) with page citations; no LLM needed. | Cheapest possible feature with the most value; works on CPU in milliseconds. |
 | Fine-tuning kit lives in `llm/` (own `pyproject.toml`, not installed in the web image): dataset builder → QLoRA (fits an 8 GB RTX 4060) → GGUF export → eval. | Keeps torch-CUDA out of the server image; training runs on the founder's laptop. |
 | Multi-tenant SaaS: `workspaces` (organisation, members, company profile, bid pipeline, API keys) and `billing` (plans, quotas, Razorpay subscriptions). | "Provide everything to the client". |
-| Production = one VPS with docker compose + Caddy (auto-HTTPS) + nightly `pg_dump` off-site. Vercel/Neon free-tier workarounds are removed. | A proper database without free-tier size hacks. |
+| Production = one VPS with docker compose + Caddy (auto-HTTPS) + nightly `pg_dump` off-site. Until that server exists, the free Vercel + Neon deployment stays live (`vercel.json`, `.github/workflows/crawl.yml`, `docs/DEPLOY.md` "Free hosting on Vercel"): search, alerts, workspaces and billing work there; the Copilot answers extractively (no LLM) and cannot process uploads (no worker). | A proper database without free-tier size hacks, without taking the public site down meanwhile. |
 
 ## 2. Apps and ownership
 

@@ -178,7 +178,7 @@ def test_prune_detail_retention_keeps_pages_still_referenced(make_page, settings
     assert Tender.objects.get().raw_page_id == current.pk
 
 
-def test_prune_deletes_unchanged_items_with_their_page(make_page, settings):
+def test_prune_deletes_finished_items_with_their_page(make_page, settings):
     """Pruning must not UPDATE crawl items: a database at its size limit has no room."""
     from datetime import timedelta
 
@@ -199,6 +199,10 @@ def test_prune_deletes_unchanged_items_with_their_page(make_page, settings):
             crawl_run=run, source_tender_id="T", outcome="unchanged", raw_page=refetched
         )
 
+    CrawlItem.objects.create(
+        crawl_run=done, source_tender_id="T2", outcome="updated", raw_page=refetched
+    )
+
     settings.CRAWLER = {**settings.CRAWLER, "RAW_DETAIL_RETENTION_DAYS": 0}
     assert tasks.prune_raw_pages.apply().get() == 1
     assert list(CrawlItem.objects.values_list("crawl_run", "raw_page")) == [(running.pk, None)]
@@ -209,6 +213,51 @@ def test_prune_command():
     from django.core.management import call_command
 
     call_command("prune")  # VACUUM fails inside a transaction block
+
+
+def _raw_page_foreign_keys():
+    from django.db import connection
+
+    with connection.cursor() as cur:
+        cur.execute(
+            "select conrelid::regclass::text, conname, pg_get_constraintdef(oid)"
+            " from pg_constraint where contype = 'f' and confrelid = 'raw_page'::regclass"
+            " order by 1, 2"
+        )
+        return cur.fetchall()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reclaim_space_truncates_pages_and_keeps_tenders(make_page):
+    """A database at its size cap gets its files back; tenders stay, minus their page."""
+    from django.core.management import call_command
+
+    from ingest.loader import load_detail_page
+    from ingest.models import Quarantine
+    from tests.conftest import fixture_text
+
+    page = make_page(fixture_text("gepnic_central/detail_01.html"))
+    load_detail_page(page)
+    broken = make_page(fixture_text("broken/detail_closes_before_published.html"))
+    assert load_detail_page(broken).outcome == "quarantined"
+    run = CrawlRun.objects.create(source="central", status=CrawlRun.Status.SUCCEEDED)
+    CrawlItem.objects.create(crawl_run=run, source_tender_id="T", raw_page=page)
+    constraints = _raw_page_foreign_keys()
+    assert {table for table, *_ in constraints} == {"crawl_item", "quarantine", "tender"}
+
+    call_command("reclaim_space", if_over_mb=10**6)  # under the threshold: untouched
+    assert RawPage.objects.count() == 2
+
+    call_command("reclaim_space")
+    assert not RawPage.objects.exists()
+    assert not CrawlItem.objects.exists()
+    assert Tender.objects.get().raw_page_id is None
+    assert Quarantine.objects.get().raw_page_id is None
+    assert CrawlRun.objects.get() == run  # run totals stay
+    assert _raw_page_foreign_keys() == constraints  # re-created as the migrations made them
+
+    call_command("reclaim_space")  # nothing left to reclaim: still works
+    assert _raw_page_foreign_keys() == constraints
 
 
 def test_prune_crawl_items_only_old_finished_runs(db, settings):

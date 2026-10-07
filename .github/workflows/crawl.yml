@@ -1,7 +1,9 @@
 name: crawl
-# Scheduled crawls for the Vercel deployment, which has no Celery worker or beat.
-# Like CELERY_BEAT_SCHEDULE in config/settings.py, but the full crawl is weekly and old rows
-# are pruned before and after every run, so the data fits a free 0.5 GB Postgres. A full
+# Scheduled jobs for the Vercel deployment, which has no Celery worker or beat (the VPS stack
+# in deploy/ runs them on Celery instead). Like CELERY_BEAT_SCHEDULE in config/settings.py,
+# but the full crawl is weekly and old rows are pruned before and after every run, so the
+# data fits a free 0.5 GB Postgres. When it fills up anyway, reclaim_space truncates the
+# stored HTML (re-fetched by the next crawl) before anything needs to write. A full
 # crawl keeps detail pages only for new or changed tenders (re-fetching every unchanged one
 # once filled the database), and an incremental one stores ~5 MB of listing pages and
 # ~2,700 crawl items.
@@ -13,7 +15,9 @@ on:
     inputs:
       mode:
         type: choice
-        options: [incremental, full]
+        # migrate: reclaim space, prune and migrate only (run it right before a deploy
+        # whose migrations the live site needs).
+        options: [incremental, full, migrate]
         default: incremental
 
 concurrency:
@@ -27,8 +31,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DJANGO_SECRET_KEY: crawler-does-not-sign-anything
-      ES_ENABLED: "false"
-      # No broker here: index_tender and send_alerts run inline after each commit.
+      # No broker here: send_alerts runs inline after each commit.
       CELERY_TASK_ALWAYS_EAGER: "true"
       EMAIL_BACKEND: ${{ vars.EMAIL_BACKEND || 'django.core.mail.backends.console.EmailBackend' }}
       SITE_URL: ${{ vars.SITE_URL }}
@@ -52,12 +55,17 @@ jobs:
       - if: steps.cfg.outputs.skip != 'true'
         run: uv sync --frozen --no-dev
       - if: steps.cfg.outputs.skip != 'true'
-        run: uv run python manage.py migrate --noinput
+        name: Reclaim space
+        # Near the 512 MB cap nothing can be written, not even a migration: truncate the
+        # stored HTML and crawl items first (tenders, users and alerts stay).
+        run: uv run python manage.py reclaim_space --if-over-mb 460
       - if: steps.cfg.outputs.skip != 'true'
         name: Prune old rows
-        # Also before the crawl, so a database that hit its size limit frees space first.
+        # Before migrating too, so a migration that rewrites a table finds the space.
         run: uv run python manage.py prune
       - if: steps.cfg.outputs.skip != 'true'
+        run: uv run python manage.py migrate --noinput
+      - if: steps.cfg.outputs.skip != 'true' && env.MODE != 'migrate'
         name: Crawl
         run: |
           status=0
@@ -67,6 +75,24 @@ jobs:
             echo "::endgroup::"
           done
           exit $status
+      - if: always() && steps.cfg.outputs.skip != 'true' && env.MODE != 'migrate'
+        name: Beat jobs
+        # The Celery beat entries that are not crawls: close runs a killed job left open,
+        # rebuild the typo-correction word list, and once a day (the 02:35 UTC run, 08:05 IST)
+        # email pipeline reminders.
+        run: |
+          uv run python manage.py shell -c "
+          from ingest.tasks import close_stale_runs
+          from tenders.tasks import refresh_search_words
+          print('stale runs closed:', close_stale_runs())
+          refresh_search_words()
+          "
+          if [ "$(date -u +%H)" = "02" ]; then
+            uv run python manage.py shell -c "
+          from workspaces.tasks import send_pipeline_reminders
+          print('pipeline reminders sent:', send_pipeline_reminders())
+          "
+          fi
       - if: always() && steps.cfg.outputs.skip != 'true'
         name: Prune old rows after the crawl
         run: uv run python manage.py prune
