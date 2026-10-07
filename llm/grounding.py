@@ -127,7 +127,9 @@ def values(text: str) -> set:
     return {_key(f) for f in facts(text)}
 
 
-_ABBREV = re.compile(r"(?:\b(?:Rs|No|Nos|Sl|S|p|pp|Dr|Mr|Ms|Smt|Shri|viz|i\.e|e\.g|etc|approx|Cl)\.)$", re.I)
+_ABBREV = re.compile(
+    r"(?:\b(?:Rs|No|Nos|Sl|S|p|pp|Dr|Mr|Ms|Smt|Shri|viz|i\.e|e\.g|etc|approx|Cl)\.)$", re.I
+)
 _BOUNDARY = re.compile(r"(?<=[.!?।])\s+")
 
 

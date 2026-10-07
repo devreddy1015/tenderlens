@@ -26,16 +26,20 @@ Rules:
 1. Use only the passages. Never add facts from memory or general knowledge.
 2. End every sentence with the number of the passage that supports it, like this: \
 "The EMD is Rs. 9,38,100/- [2]." Cite only a passage that states the fact.
-3. Copy amounts, percentages, dates, times and periods exactly as the passage writes them. \
-Never calculate, convert, round, add up or compare values; if the question needs a \
-calculation, give the values as written and say the documents do not state the result.
-4. If the passages do not answer the question, reply with exactly this sentence and nothing \
-else: {ABSTAIN}
-5. If they answer only part of the question, answer that part and say which part the \
+3. Copy amounts, percentages, dates, times, periods and counts exactly as the passage writes \
+them, with any qualifier that goes with them (such as "(60% of the estimated cost)"). Never \
+calculate, convert, round, add up or compare values; if the question needs a calculation, give \
+the values as written and say the documents do not state the result.
+4. Tender words have synonyms: EMD = earnest money = bid security; tender fee = cost of \
+tender document; performance guarantee = performance security; liquidated damages = \
+compensation for delay; completion period = time allowed.
+5. If the passages do not state the answer, reply with exactly this sentence and nothing \
+else, no citation and no explanation of what the passages say instead: {ABSTAIN}
+6. If they answer only part of the question, answer that part and say which part the \
 documents do not mention.
-6. Answer in the language of the question (English or Hindi), keeping amounts and dates as \
-written. Rule 4's sentence stays in English.
-7. Be brief: one to three sentences of plain text, no headings, lists or preamble."""
+7. Answer in the language of the question (English or Hindi), keeping amounts and dates as \
+written. Rule 5's sentence stays in English.
+8. Be brief: one to three sentences of plain text, no headings, lists or preamble."""
 
 # Sampling for grounded extraction: greedy, short. presence_penalty is not needed at
 # temperature 0; repetition loops are cut by max_tokens. chat_template_kwargs turns off
@@ -51,6 +55,11 @@ REQUEST_PARAMS: dict = {
 
 PASSAGE_HEADER = "[{n}] {filename}, p. {page}"
 
+# Repeated after the question: a 4B model follows what it read last most closely, and the two
+# rules it broke most in the probe runs were the citation and the exact abstention sentence.
+REMINDER = f"Answer from the passages only, with [n] after every sentence. If they do not \
+state the answer, reply exactly: {ABSTAIN}"
+
 
 def format_passage(n: int, filename: str, page: int | str, text: str) -> str:
     return f"{PASSAGE_HEADER.format(n=n, filename=filename, page=page)}\n{text.strip()}"
@@ -63,7 +72,7 @@ def build_user_message(question: str, passages: Iterable[Mapping]) -> str:
         format_passage(i, p["filename"], p["page"], p["text"])
         for i, p in enumerate(passages, start=1)
     ]
-    return "Passages:\n\n" + "\n\n".join(blocks) + f"\n\nQuestion: {question.strip()}"
+    return "Passages:\n\n" + "\n\n".join(blocks) + f"\n\nQuestion: {question.strip()}\n\n{REMINDER}"
 
 
 def build_messages(question: str, passages: Iterable[Mapping]) -> list[dict]:
@@ -99,10 +108,24 @@ def is_abstention(text: str) -> bool:
     return t.startswith(_ABSTAIN_FORMS) or bool(_ABSTAIN_HI.match(t))
 
 
+# A refusal in the model's own words ("The tender documents do not state the estimated
+# value."): with no citation it can never pass the grounding post-check, so it is shown as the
+# standard sentence. Answers WITH a citation are left alone (partial answers, rule 6).
+_UNCITED_REFUSAL = re.compile(
+    r"\b(?:(?:do|does|did) not (?:mention|specify|state|contain|provide|include|say)"
+    r"|(?:is|are) not (?:mentioned|specified|stated|provided|given|available)"
+    r"|no (?:information|mention|details?) )|उल्लेख नहीं|नहीं मिल|नहीं दी गई",
+    re.I,
+)
+
+
 def clean_answer(text: str) -> str:
-    """The text to show: thinking removed, an abstention normalised to ABSTAIN exactly."""
+    """The text to show: thinking removed, an abstention (or an uncited refusal in other
+    words) normalised to ABSTAIN exactly."""
     text = strip_think(text)
-    return ABSTAIN if is_abstention(text) else text
+    if is_abstention(text) or (not CITATION.search(text) and _UNCITED_REFUSAL.search(text)):
+        return ABSTAIN
+    return text
 
 
 CITATION = re.compile(r"\[(\d{1,2}(?:\s*[,–-]\s*\d{1,2})*)\]")

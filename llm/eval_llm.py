@@ -51,7 +51,7 @@ from corpus import (
     load_questions,
     load_tenders,
 )
-from grounding import check, values, values_match
+from grounding import check, values_match
 from prompt import ABSTAIN, REQUEST_PARAMS, build_messages, clean_answer, is_abstention
 
 HERE = Path(__file__).resolve().parent
@@ -121,7 +121,13 @@ def build_items(
         if not q["answerable"]:
             top = order[:k]
             items.append(
-                Item(q["id"], "unanswerable", expected="", passages=[ch[i].passage for i in top], **base)
+                Item(
+                    q["id"],
+                    "unanswerable",
+                    expected="",
+                    passages=[ch[i].passage for i in top],
+                    **base,
+                )
             )
             continue
         gold_ids = [i for i in order if contains_evidence(ch[i].text, q["evidence"])]
@@ -184,11 +190,26 @@ def probe_items(k: int = 4) -> list[Item]:
     return out
 
 
+def stratified_sample(items: list[Item], n: int, seed: int = 11) -> list[Item]:
+    """n items with each kind in proportion (at least 5 of each), original order kept."""
+    rng = random.Random(seed)
+    by_kind: dict[str, list[int]] = defaultdict(list)
+    for i, it in enumerate(items):
+        by_kind[it.kind].append(i)
+    pick: list[int] = []
+    for idx in by_kind.values():
+        want = min(len(idx), max(5, round(n * len(idx) / len(items))))
+        pick += rng.sample(idx, want)
+    return [items[i] for i in sorted(pick)]
+
+
 # --- calling the endpoint -----------------------------------------------------------------
 
 
 class Endpoint:
-    def __init__(self, name: str, base_url: str, model: str | None, api_key: str | None, timeout: float):
+    def __init__(
+        self, name: str, base_url: str, model: str | None, api_key: str | None, timeout: float
+    ):
         self.name, self.base_url = name, base_url.rstrip("/")
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.http = httpx.Client(timeout=timeout, headers=headers)
@@ -226,10 +247,14 @@ def score(item: Item, raw: str) -> dict:
     answer = clean_answer(raw)
     abstained = is_abstention(answer) and answer.strip() == ABSTAIN
     hedged = not abstained and bool(_HEDGE.search(answer))
-    rep = None if abstained else check(answer, {n: p["text"] for n, p in enumerate(item.passages, 1)})
+    rep = (
+        None if abstained else check(answer, {n: p["text"] for n, p in enumerate(item.passages, 1)})
+    )
     valid_citation = bool(rep and rep.all_sentences_cited and not rep.invalid_citations)
     grounded = bool(rep and rep.ok and rep.citations)
-    value_match = (not abstained) and item.kind == "answerable" and values_match(item.expected, answer)
+    value_match = (
+        (not abstained) and item.kind == "answerable" and values_match(item.expected, answer)
+    )
     if item.should_abstain:
         correct = abstained
         wrong = not abstained and not hedged
@@ -271,7 +296,8 @@ def summarise(rows: list[dict]) -> dict:
         by_fact[r["fact"]][1] += 1
     served_ok = sum(r["value_match"] and r["grounded"] for r in ans)
     served_wrong = sum(
-        (not r["abstained"]) and r["grounded"] and not r["hedged"] and not r["correct"] for r in rows
+        (not r["abstained"]) and r["grounded"] and not r["hedged"] and not r["correct"]
+        for r in rows
     )
     return {
         "items": len(rows),
@@ -292,7 +318,9 @@ def summarise(rows: list[dict]) -> dict:
         "think_leaks": sum(r["think_leak"] for r in rows),
         "latency_ms_p50": round(statistics.median(lat)) if lat else None,
         "latency_ms_p95": round(statistics.quantiles(lat, n=20)[-1]) if len(lat) >= 20 else None,
-        "prompt_tokens_mean": round(statistics.mean(r["prompt_tokens"] for r in rows if r.get("prompt_tokens")))
+        "prompt_tokens_mean": round(
+            statistics.mean(r["prompt_tokens"] for r in rows if r.get("prompt_tokens"))
+        )
         if any(r.get("prompt_tokens") for r in rows)
         else None,
         "completion_tokens_mean": round(
@@ -337,8 +365,12 @@ def run_endpoint(ep: Endpoint, items: list[Item], out: Path, verbose: bool) -> l
                 "latency_ms": data["_latency_ms"],
                 "prompt_tokens": usage.get("prompt_tokens"),
                 "completion_tokens": usage.get("completion_tokens"),
-                "pp_tps": round(timings["prompt_per_second"], 1) if timings.get("prompt_per_second") else None,
-                "tg_tps": round(timings["predicted_per_second"], 1) if timings.get("predicted_per_second") else None,
+                "pp_tps": round(timings["prompt_per_second"], 1)
+                if timings.get("prompt_per_second")
+                else None,
+                "tg_tps": round(timings["predicted_per_second"], 1)
+                if timings.get("predicted_per_second")
+                else None,
             }
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
             fh.flush()
@@ -350,7 +382,9 @@ def run_endpoint(ep: Endpoint, items: list[Item], out: Path, verbose: bool) -> l
                 flush=True,
             )
             if verbose and not row["correct"]:
-                print(f"    expected={it.expected!r} gold={it.gold} unsupported={row['unsupported']}")
+                print(
+                    f"    expected={it.expected!r} gold={it.gold} unsupported={row['unsupported']}"
+                )
     return rows
 
 
@@ -390,12 +424,22 @@ def main() -> None:
         required=True,
         help="name=base_url (OpenAI-compatible, e.g. base=http://127.0.0.1:8081/v1); give two to compare",
     )
-    ap.add_argument("--model", action="append", help="model id per endpoint (default: first of /models)")
-    ap.add_argument("--api-key-env", default="LLM_API_KEY", help="env var holding a bearer key, if any")
+    ap.add_argument(
+        "--model", action="append", help="model id per endpoint (default: first of /models)"
+    )
+    ap.add_argument(
+        "--api-key-env", default="LLM_API_KEY", help="env var holding a bearer key, if any"
+    )
     ap.add_argument("--split", default="test", choices=["test", "train", "all"])
     ap.add_argument("--k", type=int, default=4, help="passages per question (copilot default)")
     ap.add_argument("--no-gold-share", type=float, default=0.25)
     ap.add_argument("--limit", type=int, default=0, help="first N items only (smoke runs)")
+    ap.add_argument(
+        "--sample",
+        type=int,
+        default=0,
+        help="a fixed stratified sample of N items (every kind, many tenders) for slow CPUs",
+    )
     ap.add_argument("--probe", action="store_true", help="the 10 train-split prompt-tuning items")
     ap.add_argument("--run", default=None, help="results folder name (default: split-k)")
     ap.add_argument("--timeout", type=float, default=900)
@@ -408,6 +452,8 @@ def main() -> None:
         items, skipped = probe_items(a.k), Counter()
     else:
         items, skipped = build_items(a.split, a.k, a.no_gold_share, a.pdf_dir, a.eval_dir)
+    if a.sample:
+        items = stratified_sample(items, a.sample)
     if a.limit:
         items = items[: a.limit]
     kinds = Counter(it.kind for it in items)
@@ -433,11 +479,22 @@ def main() -> None:
     if len(results) == 2:
         x, y = (results[n] for n in results)
         flips = Counter(
-            ("fixed" if b["correct"] else "broke") for a_, b in zip(x, y, strict=True) if a_["correct"] != b["correct"]
+            ("fixed" if b["correct"] else "broke")
+            for a_, b in zip(x, y, strict=True)
+            if a_["correct"] != b["correct"]
         )
         summaries["_diff"] = dict(flips)
-    meta = {"split": a.split, "k": a.k, "no_gold_share": a.no_gold_share, "items": dict(kinds), "skipped": dict(skipped)}
-    (out_dir / "summary.json").write_text(json.dumps({"meta": meta, **summaries}, indent=1, ensure_ascii=False))
+    meta = {
+        "split": "train (probe)" if a.probe else a.split,
+        "sample": a.sample,
+        "k": a.k,
+        "no_gold_share": a.no_gold_share,
+        "items": dict(kinds),
+        "skipped": dict(skipped),
+    }
+    (out_dir / "summary.json").write_text(
+        json.dumps({"meta": meta, **summaries}, indent=1, ensure_ascii=False)
+    )
     print()
     print(table({n: s for n, s in summaries.items() if not n.startswith("_")}))
     for n, s in summaries.items():

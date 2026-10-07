@@ -42,11 +42,7 @@ def garbled_devanagari(text: str) -> bool:
     deva = sum(1 for c in text if "ऀ" <= c <= "ॿ")
     if deva < 20:
         return False
-    junk = sum(
-        1
-        for c in text
-        if "ƀ" <= c <= "ɏ" or "" <= c <= "" or "̀" <= c <= "ͯ"
-    )
+    junk = sum(1 for c in text if "ƀ" <= c <= "ɏ" or "" <= c <= "" or "̀" <= c <= "ͯ")
     return junk / deva > GARBLE_THRESHOLD
 
 
@@ -252,7 +248,11 @@ class Tender:
         for name, pages in self.pages.items():
             out.extend(
                 chunk_pages(
-                    pages, tender_id=self.tender_id, filename=name, target=target, max_tokens=max_tokens
+                    pages,
+                    tender_id=self.tender_id,
+                    filename=name,
+                    target=target,
+                    max_tokens=max_tokens,
                 )
             )
         return out
@@ -320,9 +320,59 @@ def contains_evidence(text: str, evidence) -> bool:
 
 _WORD = re.compile(r"[a-z0-9ऀ-ॿ]+")
 STOP = frozenset(
-    "a an the of to in on for and or is are be by with what which who when how much many "
-    "this that these those does do any there their it its from at as must shall should will "
-    "can i we our my me you your has have get".split()
+    [
+        "a",
+        "an",
+        "the",
+        "of",
+        "to",
+        "in",
+        "on",
+        "for",
+        "and",
+        "or",
+        "is",
+        "are",
+        "be",
+        "by",
+        "with",
+        "what",
+        "which",
+        "who",
+        "when",
+        "how",
+        "much",
+        "many",
+        "this",
+        "that",
+        "these",
+        "those",
+        "does",
+        "do",
+        "any",
+        "there",
+        "their",
+        "it",
+        "its",
+        "from",
+        "at",
+        "as",
+        "must",
+        "shall",
+        "should",
+        "will",
+        "can",
+        "i",
+        "we",
+        "our",
+        "my",
+        "me",
+        "you",
+        "your",
+        "has",
+        "have",
+        "get",
+    ]
 )
 
 
@@ -350,8 +400,11 @@ class BM25:
             for w in q:
                 if w in tf:
                     f = tf[w]
-                    s += self.idf[w] * f * (self.k1 + 1) / (
-                        f + self.k1 * (1 - self.b + self.b * len(toks) / self.avg)
+                    s += (
+                        self.idf[w]
+                        * f
+                        * (self.k1 + 1)
+                        / (f + self.k1 * (1 - self.b + self.b * len(toks) / self.avg))
                     )
             out.append(s)
         return out
@@ -427,8 +480,10 @@ def main() -> None:
             ch = t.chunks()
             n_ocr = sum(p.ocr for ps in t.pages.values() for p in ps)
             sizes = [approx_tokens(c.text) for c in ch]
-            print(f"{t.tender_id:28} {t.split:5} pages={sum(map(len, t.pages.values()))} "
-                  f"ocr={n_ocr} chunks={len(ch)} tokens~{sizes}")
+            print(
+                f"{t.tender_id:28} {t.split:5} pages={sum(map(len, t.pages.values()))} "
+                f"ocr={n_ocr} chunks={len(ch)} tokens~{sizes}"
+            )
 
 
 if __name__ == "__main__":
