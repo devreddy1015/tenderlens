@@ -1,0 +1,76 @@
+# TenderLens edge (the `proxy` image): HTTPS, the React app, and Django behind it.
+#
+# Environment:
+#   SITE_ADDRESS  a domain (tenders.example.in) -> automatic Let's Encrypt certificate;
+#                 ":80" -> plain HTTP (development); "localhost" -> Caddy's internal CA
+#   ACME_EMAIL    contact address for Let's Encrypt (expiry notices)
+#   UPSTREAM      gunicorn, default web:8000
+#
+# Uploaded tender PDFs (/app/media) are private to each workspace and are never served here.
+{
+	email {$ACME_EMAIL:webmaster@localhost}
+}
+
+{$SITE_ADDRESS::80} {
+	log {
+		output stdout
+		format json
+	}
+
+	# Largest Copilot upload (COPILOT_MAX_UPLOAD_MB=25) plus multipart overhead.
+	request_body {
+		max_size 30MB
+	}
+
+	# Security headers on every response, Django's included (defer: applied after the upstream
+	# answered, so these values win). HSTS matches Django's SECURE_HSTS_* settings.
+	header {
+		defer
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Google sign-in opens a popup that must be able to post back to us.
+		Cross-Origin-Opener-Policy "same-origin-allow-popups"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(self \"https://checkout.razorpay.com\" \"https://api.razorpay.com\")"
+		-Server
+	}
+
+	# Content-Security-Policy: generated at build time by csp.mjs (it hashes index.html's
+	# inline script). The Swagger page (/api/docs/) loads its UI from jsDelivr instead.
+	@app not path /api/docs/*
+	import csp.caddy
+	header /api/docs/* Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://cdn.jsdelivr.net; frame-ancestors 'self'"
+
+	# Copilot answers stream as Server-Sent Events for ~1 minute: no compression, no buffering.
+	@sse path /api/copilot/ask
+	handle @sse {
+		reverse_proxy {$UPSTREAM:web:8000} {
+			flush_interval -1
+		}
+	}
+
+	@django path /api/* /admin /admin/* /static/* /health
+	handle @django {
+		encode zstd gzip
+		reverse_proxy {$UPSTREAM:web:8000}
+	}
+
+	# Vite's content-hashed bundles never change under the same name.
+	handle /assets/* {
+		root * /srv
+		encode zstd gzip
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else is the single-page app; index.html is revalidated on every visit so a
+	# deploy is picked up immediately.
+	handle {
+		root * /srv
+		encode zstd gzip
+		try_files {path} /index.html
+		header Cache-Control "no-cache"
+		file_server
+	}
+}

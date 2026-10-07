@@ -1,0 +1,88 @@
+# Self-hosted copilot LLM: llama.cpp's OpenAI-compatible server running a GGUF from llm/models/.
+# The deploy stage merges this service block into docker-compose.yml (dev) and the prod compose;
+# on its own it also runs from the repo root (paths are relative to the repo root):
+#
+#     docker compose --project-directory . -f deploy/llm/compose.llm.yml up -d llm
+#
+# Without the compose plugin, the same container as a plain `docker run`:
+#
+#     docker run -d --name tenderlens-llm --restart unless-stopped -p 127.0.0.1:8081:8080 \
+#       -v "$PWD/llm/models:/models:ro" ghcr.io/ggml-org/llama.cpp:server \
+#       -m /models/Qwen3.5-4B-Q4_K_M.gguf --alias tenderlens-qwen3.5-4b --host 0.0.0.0 \
+#       --port 8080 -c 8192 -np 1 --jinja --reasoning off \
+#       --chat-template-kwargs '{"enable_thinking":false}' -t 6 -tb 12 -cram 512 --metrics --no-webui
+#
+# Django talks to it with LLM_BASE_URL=http://llm:8080/v1 (inside compose) or
+# http://127.0.0.1:8081/v1 (from the host) and LLM_MODEL=tenderlens-qwen3.5-4b.
+# Swap models (e.g. the fine-tuned one) by changing LLM_GGUF and LLM_ALIAS; nothing else changes.
+# See llm/README.md for the model choice, the measured speed and the RAM budget.
+
+services:
+  llm:
+    # CPU build. Pin a digest in prod (`docker image inspect ghcr.io/ggml-org/llama.cpp:server`)
+    # so an upstream change to the chat-template code cannot change answers silently.
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: tenderlens-llm
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8080"   # never expose the LLM publicly; Django is the only client
+    volumes:
+      - ./llm/models:/models:ro
+    command:
+      - -m
+      - /models/${LLM_GGUF:-Qwen3.5-4B-Q4_K_M.gguf}
+      - --alias
+      - ${LLM_ALIAS:-tenderlens-qwen3.5-4b}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - -c
+      - "8192"           # 4 passages x ~600 tokens + system prompt + answer fits in ~3k; 8k is headroom
+      - -np
+      - "1"              # one request at a time on CPU; raise with the GPU variant
+      - --jinja          # use the model's own chat template (needed for chat_template_kwargs)
+      - --reasoning
+      - "off"            # Qwen3.5 thinks by default; grounded extraction does not need it
+      - --chat-template-kwargs
+      - '{"enable_thinking":false}'
+      - -t
+      - ${LLM_THREADS:-6}         # generation is memory-bound: physical P-cores only
+      - -tb
+      - ${LLM_BATCH_THREADS:-12}  # prompt processing is compute-bound: use more threads
+      - -cram
+      - "512"            # reuse the KV of the shared system prompt across questions
+      - --metrics
+      - --no-webui
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    # ~3.3 GB resident for the 4B Q4_K_M with an 8k context; the cap keeps a runaway from
+    # starving Postgres on a small VPS.
+    mem_limit: 5g
+
+  # GPU variant (NVIDIA, needs the driver + nvidia-container-toolkit on the host; see
+  # llm/README.md "GPU"). Replace the `llm` service above with this one:
+  #
+  # llm:
+  #   image: ghcr.io/ggml-org/llama.cpp:server-cuda
+  #   container_name: tenderlens-llm
+  #   restart: unless-stopped
+  #   ports:
+  #     - "127.0.0.1:8081:8080"
+  #   volumes:
+  #     - ./llm/models:/models:ro
+  #   command: >-
+  #     -m /models/${LLM_GGUF:-Qwen3.5-4B-Q4_K_M.gguf} --alias ${LLM_ALIAS:-tenderlens-qwen3.5-4b}
+  #     --host 0.0.0.0 --port 8080 -c 8192 -np 4 --jinja --reasoning off
+  #     --chat-template-kwargs '{"enable_thinking":false}' -ngl 99 -fa on --metrics --no-webui
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]

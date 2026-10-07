@@ -1,0 +1,38 @@
+# Ollama recipe for the TenderLens copilot model (for anyone who prefers Ollama to llama.cpp's
+# server; the API is the same OpenAI-compatible one at http://127.0.0.1:11434/v1).
+#
+#     ollama create tenderlens-qwen3.5-4b -f deploy/llm/Modelfile    # run from the repo root
+#     LLM_BASE_URL=http://127.0.0.1:11434/v1 LLM_MODEL=tenderlens-qwen3.5-4b
+#
+# For a fine-tuned model, llm/export_gguf.py writes the same file next to the new GGUF.
+# The system prompt is not baked in: the copilot sends llm/prompt.py's SYSTEM_PROMPT with
+# every request, so the prompt has one source of truth. Thinking is off: the template opens
+# every assistant turn with an empty <think></think> block, which is what Qwen3.5's own
+# template does for enable_thinking=false.
+
+FROM ../../llm/models/Qwen3.5-4B-Q4_K_M.gguf
+
+TEMPLATE """{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ .Content }}<|im_end|>
+{{ end }}
+{{- end }}<|im_start|>assistant
+<think>
+
+</think>
+
+"""
+
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
+PARAMETER temperature 0
+PARAMETER top_p 1
+PARAMETER num_ctx 8192
+PARAMETER num_predict 300
+
+LICENSE """Qwen3.5-4B: Apache License 2.0, Copyright Alibaba Cloud (https://huggingface.co/Qwen/Qwen3.5-4B)."""

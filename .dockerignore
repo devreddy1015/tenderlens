@@ -1,8 +1,27 @@
+# Keep the build context small: llm/models alone is ~12 GB of GGUF weights.
 .git
+.github
 .venv
 **/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.env
+.env.*
+!.env.example
+llm
+media
+backups
+staticfiles
+scripts/.cache
+tests
+docs
+*.gguf
+*.dump
+*.tgz
+*.tar.gz
 frontend/node_modules
 frontend/dist
-staticfiles
-.env
-data/*.dump
+frontend/*.tsbuildinfo
+# Bid advisor raw downloads (GBs); trained models are mounted, not baked
+data/intel/raw

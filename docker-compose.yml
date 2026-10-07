@@ -1,23 +1,25 @@
-# Local development / single-host stack. `make up` starts everything.
+# Local development stack. `make up` starts everything; the site is http://localhost:8080.
+# Same images and roles as production (deploy/compose.prod.yml, docs/DEPLOY.md), but plain
+# HTTP, published database ports, Mailpit, and migrations on web start.
 x-app: &app
-  build: .
+  build: { context: ., target: app }
   image: tenderlens:latest
   env_file: .env
-  environment:
+  environment: &app-env
     POSTGRES_HOST: postgres
     REDIS_URL: redis://redis:6379/0
-    ES_URL: http://elasticsearch:9200
     EMAIL_HOST: ${EMAIL_HOST:-mailpit}
     EMAIL_PORT: ${EMAIL_PORT:-1025}
+    MEDIA_ROOT: /app/media
+  volumes: ["media:/app/media"]     # uploaded tender PDFs (Copilot)
   depends_on:
     postgres: { condition: service_healthy }
     redis: { condition: service_healthy }
-    elasticsearch: { condition: service_healthy }
   restart: unless-stopped
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16   # pgvector is used later by DocIntel
+    image: pgvector/pgvector:pg16   # pgvector: Copilot chunk embeddings; pg_trgm: tender search
     environment:
       POSTGRES_DB: tenderlens
       POSTGRES_USER: tenderlens
@@ -41,20 +43,6 @@ services:
       retries: 20
     restart: unless-stopped
 
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
-    environment:
-      discovery.type: single-node
-      xpack.security.enabled: "false"
-      ES_JAVA_OPTS: -Xms512m -Xmx512m
-    volumes: [esdata:/usr/share/elasticsearch/data]
-    ports: ["127.0.0.1:9200:9200"]
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
-      interval: 10s
-      retries: 30
-    restart: unless-stopped
-
   # Catches every email in development: http://localhost:8025. In production set
   # EMAIL_HOST/EMAIL_PORT/EMAIL_HOST_USER/EMAIL_HOST_PASSWORD/EMAIL_USE_TLS in .env.
   mailpit:
@@ -64,32 +52,51 @@ services:
 
   web:
     <<: *app
-    command: ["/app/deploy/entrypoint.sh", "web"]
+    command: ["web"]
     ports: ["127.0.0.1:8000:8000"]
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=5)"]
       interval: 15s
       retries: 10
 
+  worker-crawl:
+    <<: *app
+    command: ["worker-crawl"]
+    environment:
+      <<: *app-env
+      CRAWL_CONCURRENCY: ${CRAWL_CONCURRENCY:-8}
+
   worker:
     <<: *app
-    command: ["celery", "-A", "config", "worker", "-Q", "crawl,default", "--concurrency", "2", "-l", "info"]
+    command: ["worker"]
 
   beat:
     <<: *app
-    command: ["celery", "-A", "config", "beat", "-l", "info", "--schedule", "/tmp/celerybeat-schedule"]
+    command: ["beat"]
+    volumes: ["media:/app/media", "beat:/var/lib/celery"]
 
-  nginx:
-    build:
-      context: .
-      dockerfile: deploy/nginx.Dockerfile
-    image: tenderlens-nginx:latest
+  # Caddy with the built React app, as in production; SITE_ADDRESS=:80 means plain HTTP.
+  proxy:
+    build: { context: ., target: proxy }
+    image: tenderlens-proxy:latest
+    environment:
+      SITE_ADDRESS: ":80"
     ports: ["${HTTP_PORT:-8080}:80"]
     depends_on:
       web: { condition: service_healthy }
     restart: unless-stopped
 
+  # Self-hosted Copilot LLM (llama.cpp, CPU), opt-in: `docker compose --profile llm up -d llm`
+  # (needs the GGUF in llm/models, llm/README.md). Django inside compose then uses
+  # LLM_BASE_URL=http://llm:8080/v1; from the host it is http://127.0.0.1:8081/v1.
+  # Full service definition and the GPU variant: deploy/llm/compose.llm.yml.
+  llm:
+    profiles: ["llm"]
+    extends: { file: deploy/llm/compose.llm.yml, service: llm }
+    volumes: ["./llm/models:/models:ro"]   # extends would resolve it next to compose.llm.yml
+
 volumes:
   pgdata:
   redisdata:
-  esdata:
+  media:
+  beat:

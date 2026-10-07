@@ -1,0 +1,230 @@
+# Production stack: one VPS, everything behind Caddy (automatic HTTPS). Runbook: docs/DEPLOY.md.
+#
+#   make prod-up      # = docker compose -f deploy/compose.prod.yml --env-file .env up -d --build --wait
+#
+# Paths are relative to this directory (deploy/). Only Caddy publishes ports; Postgres, Redis,
+# gunicorn and the LLM are reachable only on the internal network.
+# Memory limits fit the recommended 8 vCPU / 16 GB box with the CPU LLM (~12.5 GB of limits,
+# measured use well below); without the LLM an 8 GB box is enough. Override any *_MEM in .env.
+name: tenderlens-prod
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
+
+x-app: &app
+  build: { context: .., target: app }
+  image: ${APP_IMAGE:-tenderlens:latest}
+  env_file: ["${TL_ENV_FILE:-../.env}"]
+  environment: &app-env
+    DJANGO_PRODUCTION: "true"          # strict settings; refuses to start with a dev config
+    POSTGRES_HOST: postgres
+    REDIS_URL: redis://redis:6379/0
+    MEDIA_ROOT: /app/media
+    MIGRATE_ON_START: "false"          # the one-shot `migrate` service does it, exactly once
+  volumes: ["media:/app/media"]
+  # Lets LLM_BASE_URL point at an LLM server on the host: http://host.docker.internal:8081/v1
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  depends_on: &app-deps
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    migrate: { condition: service_completed_successfully }
+  restart: unless-stopped
+  logging: *logging
+
+services:
+  caddy:
+    build: { context: .., target: proxy }
+    image: ${PROXY_IMAGE:-tenderlens-proxy:latest}
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env (your domain, e.g. tenders.example.in)}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env (Let's Encrypt expiry notices)}
+    ports:
+      - "${CADDY_HTTP_BIND:-80}:80"
+      - "${CADDY_HTTPS_BIND:-443}:443"
+      - "${CADDY_HTTPS_BIND:-443}:443/udp"   # HTTP/3
+    volumes:
+      - caddy_data:/data        # certificates: keep it, or Let's Encrypt rate limits bite
+      - caddy_config:/config
+    depends_on:
+      web: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    mem_limit: ${CADDY_MEM:-256m}
+    restart: unless-stopped
+    logging: *logging
+
+  migrate:
+    <<: *app
+    command: ["migrate"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: "no"
+    mem_limit: ${MIGRATE_MEM:-1g}
+
+  web:
+    <<: *app
+    command: ["web"]
+    environment:
+      <<: *app-env
+      OMP_NUM_THREADS: "2"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    stop_grace_period: 40s      # gunicorn graceful_timeout 30 s
+    mem_limit: ${WEB_MEM:-2g}
+
+  worker-crawl:
+    <<: *app
+    command: ["worker-crawl"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d crawl@$$HOSTNAME --timeout 10 >/dev/null"]
+      interval: 2m
+      timeout: 30s
+      start_period: 60s
+      retries: 3
+    mem_limit: ${CRAWL_MEM:-1g}
+
+  worker:
+    <<: *app
+    command: ["worker"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d default@$$HOSTNAME --timeout 10 >/dev/null"]
+      interval: 2m
+      timeout: 30s
+      start_period: 60s
+      retries: 3
+    mem_limit: ${WORKER_MEM:-2g}
+
+  beat:
+    <<: *app
+    command: ["beat"]
+    volumes: ["beat:/var/lib/celery"]   # schedule state survives restarts
+    healthcheck:
+      # beat rewrites its schedule file every few minutes while it is alive.
+      test: ["CMD-SHELL", "find /var/lib/celery -name 'celerybeat-schedule*' -mmin -15 | grep -q ."]
+      interval: 5m
+      timeout: 10s
+      start_period: 10m
+      retries: 2
+    mem_limit: ${BEAT_MEM:-384m}
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: tenderlens
+      POSTGRES_USER: tenderlens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    # Tuned for a small VPS (PG_* in .env scale it): connections = web 2x8 threads + 24 crawl
+    # threads + workers + beat + admin headroom; maintenance_work_mem speeds up HNSW builds.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-512MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-16MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-256MB}
+      - -c
+      - max_connections=100
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - wal_compression=on
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - log_min_duration_statement=2000
+      - -c
+      - idle_in_transaction_session_timeout=10min
+    shm_size: 256m
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tenderlens -d tenderlens"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    mem_limit: ${POSTGRES_MEM:-2g}
+    restart: unless-stopped
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    # Broker + throttle cache. noeviction: a full Redis must refuse writes, never drop tasks.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "200mb", "--maxmemory-policy", "noeviction"]
+    volumes: ["redisdata:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    mem_limit: ${REDIS_MEM:-300m}
+    restart: unless-stopped
+    logging: *logging
+
+  # Self-hosted Copilot LLM (merged from deploy/llm/compose.llm.yml): llama.cpp's
+  # OpenAI-compatible server on CPU. Enabled with COMPOSE_PROFILES=llm in .env, then
+  # LLM_BASE_URL=http://llm:8080/v1. Without it the Copilot answers extractively.
+  # Download the GGUF first (llm/README.md); GPU box: see docs/DEPLOY.md "GPU".
+  llm:
+    profiles: ["llm"]
+    # Pin a digest after the first deploy (docker image inspect) so an upstream chat-template
+    # change cannot silently change answers.
+    image: ${LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
+    volumes: ["../llm/models:/models:ro"]
+    command:
+      - -m
+      - /models/${LLM_GGUF:-Qwen3.5-4B-Q4_K_M.gguf}
+      - --alias
+      - ${LLM_ALIAS:-tenderlens-qwen3.5-4b}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - -c
+      - "8192"
+      - -np
+      - "1"              # one answer at a time on CPU; Celery-free, requests queue in llama.cpp
+      - --jinja
+      - --reasoning
+      - "off"
+      - --chat-template-kwargs
+      - '{"enable_thinking":false}'
+      - -t
+      - ${LLM_THREADS:-6}          # physical cores for generation (memory-bound)
+      - -tb
+      - ${LLM_BATCH_THREADS:-8}    # prompt processing (compute-bound)
+      - -cram
+      - "512"
+      - --metrics
+      - --no-webui
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 3
+    mem_limit: ${LLM_MEM:-5g}
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  pgdata:
+  redisdata:
+  media:          # uploaded tender PDFs: backed up nightly with the database
+  beat:
+  caddy_data:
+  caddy_config:
