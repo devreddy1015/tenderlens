@@ -200,6 +200,13 @@ export default function Pricing() {
         </Button>
       );
     }
+    if (signedIn && ws.data?.role === "member") {
+      return (
+        <Button className="w-full" disabled title="Only owners and admins of the workspace can change its plan">
+          Ask an owner to upgrade
+        </Button>
+      );
+    }
     const busy = checkout.isPending && checkout.variables?.plan.code === plan.code;
     return (
       <Button variant="primary" className="w-full" onClick={() => choose(plan)} disabled={checkout.isPending || awaiting !== null}>
@@ -226,7 +233,7 @@ export default function Pricing() {
           />
         }
       >
-        Search and alerts are free. Paid plans add more Copilot questions and documents, eligibility checks, CSV export and seats for your team.
+        Search and alerts are free. Bid Brief, cited answers and eligibility checks come with every plan. Paid plans add more Copilot questions and documents, CSV export, the API and seats for your team.
       </PageHeader>
 
       {plans.isError ? (

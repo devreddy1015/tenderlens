@@ -14,7 +14,7 @@ interface AuthState {
 }
 
 /** Queries holding one user's data: dropped on sign-out so the next person never sees them. */
-const PRIVATE_KEYS = new Set(["alerts", "workspace", "members", "api-keys", "pipeline", "pipeline-summary", "subscription", "copilot"]);
+const PRIVATE_KEYS = new Set(["alerts", "workspace", "workspaces", "members", "invites", "api-keys", "pipeline", "pipeline-summary", "subscription", "copilot", "recommendations"]);
 
 const AuthContext = createContext<AuthState>({
   me: undefined,

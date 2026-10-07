@@ -145,6 +145,7 @@ DETAIL_FIELDS = {
     "pincode": ["Pincode"],
     "published": ["Published Date"],
     "opens": ["Bid Opening Date"],
+    "prebid": ["Pre Bid Meeting Date"],
     "submission_start": ["Bid Submission Start Date"],
     "closes": ["Bid Submission End Date"],
     "inviting_authority": ["Name"],

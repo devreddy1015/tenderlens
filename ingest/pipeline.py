@@ -16,6 +16,7 @@ from django.db import transaction
 from django.db.models import Count, F
 from django.utils import timezone
 
+from ingest import robots
 from ingest.fetcher import Fetcher, FetchError
 from ingest.models import CrawlItem, CrawlRun, RawPage
 from ingest.parsers import gepnic
@@ -134,6 +135,25 @@ class Crawler:
         return self.fetch_page(job.url, RawPage.Kind.DETAIL, tender_id=job.tender_id)
 
 
+# --- adapters -----------------------------------------------------------------------
+# One crawler class per Source.kind. A crawler offers ensure_session(), discover(mode=,
+# max_orgs=) -> Discovery and fetch_detail(DetailJob) -> RawPage; everything after that
+# (planning, bookkeeping, loading, reconciliation) is shared. The loader picks the matching
+# detail parser from ingest.parsers.DETAIL_PARSERS. Only GePNIC exists today: GeM and CPPP
+# e-publish are protected or CAPTCHA-gated (docs/SOURCE_NOTES.md).
+CRAWLERS: dict[str, type[Crawler]] = {"gepnic": Crawler}
+
+
+def crawler_for(source: Source, fetcher: Fetcher, run: CrawlRun | None = None) -> Crawler:
+    try:
+        cls = CRAWLERS[source.kind]
+    except KeyError:
+        raise NotImplementedError(
+            f"no crawler for source kind {source.kind!r} ({source.key})"
+        ) from None
+    return cls(source, fetcher, run)
+
+
 def _listing_unchanged(row: gepnic.ListingRow, known: dict) -> bool:
     """A corrigendum almost always moves a date; the title check catches the rest."""
     try:
@@ -149,6 +169,23 @@ def _listing_unchanged(row: gepnic.ListingRow, known: dict) -> bool:
 
 
 # --- run bookkeeping (used by both sync and Celery paths) -------------------------
+
+
+def robots_gate(run: CrawlRun, source: Source, fetcher: Fetcher) -> bool:
+    """Asks robots.txt before a run fetches anything else. A refusal (disallowed, or
+    unreadable with no recent copy) fails the run with the reason as its problem, so it
+    shows up next to every other crawl problem, and nothing more is fetched."""
+    verdict = robots.check(source, fetcher)
+    if verdict.allowed:
+        return True
+    log.warning("crawl run %s (%s) not started: %s", run.pk, source.key, verdict.message)
+    CrawlRun.objects.filter(pk=run.pk).update(
+        status=CrawlRun.Status.FAILED,
+        error=verdict.message,
+        reconciliation={"problems": [verdict.message], "robots_url": verdict.robots_url},
+        finished=timezone.now(),
+    )
+    return False
 
 
 def record_plan(run: CrawlRun, disc: Discovery) -> None:
@@ -289,7 +326,10 @@ def run_sync(
     own_fetcher = fetcher is None
     fetcher = fetcher or make_fetcher()
     try:
-        crawler = Crawler(source, fetcher, run)
+        crawler = crawler_for(source, fetcher, run)
+        if not robots_gate(run, source, fetcher):
+            run.refresh_from_db()
+            return run
         disc = crawler.discover(mode=mode, max_orgs=max_orgs)
         if max_details is not None and len(disc.jobs) > max_details:
             # A deliberately partial crawl: the index count no longer applies.

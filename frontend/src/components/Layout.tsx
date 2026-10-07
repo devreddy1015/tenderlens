@@ -1,14 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
-import { Bell, Building2, Globe, KanbanSquare, LogOut, Menu, MessageSquareText, Monitor, Moon, Search, Sun, X } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bell, Building2, Check, Code2, Globe, KanbanSquare, LogOut, Menu, MessageSquareText, Monitor, Moon, Search, Sun, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
-import { ApiError, api } from "../lib/api";
+import { ApiError, api, errorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatCount, timeAgo } from "../lib/format";
+import { resetWorkspaceData, useWorkspaces } from "../lib/queries";
 import { type ThemeChoice, useTheme } from "../lib/theme";
 import { useToast } from "../lib/toast";
 import { MAP_ATTRIBUTION } from "./IndiaMap";
 import { Logo } from "./Logo";
+import { UpgradeDialogHost } from "./Upgrade";
 import { Button, ButtonLink, cx, Dialog, Field, inputClass, Segmented } from "./ui";
 
 const NAV = [
@@ -27,7 +29,51 @@ const ACCOUNT_LINKS = [
   { to: "/pipeline", label: "Bid pipeline", icon: KanbanSquare },
   { to: "/alerts", label: "My alerts", icon: Bell },
   { to: "/coverage", label: "Coverage", icon: Globe },
+  { to: "/developers", label: "API & developers", icon: Code2 },
 ];
+
+const ROLE_WORD = { owner: "Owner", admin: "Admin", member: "Member" } as const;
+
+/** The organisations you belong to; picking one makes it active on every device (the
+ *  choice is stored server-side), so all workspace data is dropped and refetched. */
+function WorkspaceSwitcher({ onDone }: { onDone: () => void }) {
+  const list = useWorkspaces();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const nav = useNavigate();
+  const loc = useLocation();
+  const sw = useMutation({
+    mutationFn: (id: number) => api.workspace.switchTo(id),
+    onSuccess: (ws) => {
+      resetWorkspaceData(qc, ws);
+      toast("success", `Switched to ${ws.name}`);
+      onDone();
+      // A tender or invite page stays; workspace-only pages simply refetch.
+      if (loc.pathname.startsWith("/invite/")) nav("/workspace");
+    },
+    onError: (e) => toast("error", errorMessage(e, "Couldn't switch workspace")),
+  });
+  if (!list.data?.length) return null;
+  return (
+    <div className="border-b border-line py-1" role="group" aria-label="Workspaces">
+      <p className="label px-3 pt-1.5 pb-1">Workspace</p>
+      {list.data.map((w) => (
+        <button
+          key={w.id}
+          type="button"
+          aria-current={w.active ? "true" : undefined}
+          disabled={w.active || sw.isPending}
+          onClick={() => sw.mutate(w.id)}
+          className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-ink-2 enabled:hover:bg-surface-2 enabled:hover:text-ink disabled:cursor-default"
+        >
+          <span className="grid size-4 shrink-0 place-items-center">{w.active && <Check className="size-4 text-signal-text" aria-hidden="true" />}</span>
+          <span className={cx("min-w-0 flex-1 truncate", w.active && "font-medium text-ink")}>{w.name}</span>
+          <span className="num shrink-0 text-[11px] text-ink-3">{ROLE_WORD[w.role] ?? w.role}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export { Logo };
 
@@ -98,8 +144,13 @@ function UserMenu() {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("keydown", esc);
+    };
   }, []);
   if (!me?.authenticated || !me.user) {
     return (
@@ -129,10 +180,11 @@ function UserMenu() {
             <p className="truncate text-sm font-medium text-ink">{u.name}</p>
             <p className="num truncate text-xs text-ink-3">{u.email}</p>
           </div>
+          <WorkspaceSwitcher onDone={() => setOpen(false)} />
           <div className="pt-1">
             {ACCOUNT_LINKS.map(({ to, label, icon: Icon }) => (
               <Link key={to} to={to} onClick={() => setOpen(false)} className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink">
-                <Icon className="size-4" /> {label}
+                <Icon className="size-4" aria-hidden="true" /> {label}
               </Link>
             ))}
             <button
@@ -346,10 +398,10 @@ function Footer({ onFeedback }: { onFeedback: () => void }) {
           <li><Link to="/pricing">Pricing</Link></li>
         </FooterLinks>
         <FooterLinks title="Sources">
-          <li><a href="https://eprocure.gov.in/eprocure/app" target="_blank" rel="noreferrer">CPPP portal ↗</a></li>
-          <li><a href="https://mptenders.gov.in/nicgep/app" target="_blank" rel="noreferrer">MP e-tenders ↗</a></li>
           <li><Link to="/coverage">Coverage &amp; sources</Link></li>
-          <li><a href="/api/docs/">API documentation</a></li>
+          <li><a href="https://eprocure.gov.in/eprocure/app" target="_blank" rel="noreferrer">CPPP portal ↗</a></li>
+          <li><Link to="/developers">API &amp; OCDS for developers</Link></li>
+          <li><a href="/api/docs/">API reference</a></li>
         </FooterLinks>
         <FooterLinks title="Support">
           <li><button onClick={onFeedback}>Report a bug</button></li>
@@ -389,6 +441,7 @@ export function Layout() {
         Feedback
       </button>
       <FeedbackDialog open={feedback} onClose={() => setFeedback(false)} />
+      <UpgradeDialogHost />
     </div>
   );
 }

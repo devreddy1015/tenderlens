@@ -18,7 +18,7 @@ self-hosted LLM: no paid LLM API anywhere in the request path.
 | **Bid Brief** = deterministic rule-based extraction (EMD, fee, dates, turnover, experience, penalties, documents required…) with page citations; no LLM needed. | Cheapest possible feature with the most value; works on CPU in milliseconds. |
 | Fine-tuning kit lives in `llm/` (own `pyproject.toml`, not installed in the web image): dataset builder → QLoRA (fits an 8 GB RTX 4060) → GGUF export → eval. | Keeps torch-CUDA out of the server image; training runs on the founder's laptop. |
 | Multi-tenant SaaS: `workspaces` (organisation, members, company profile, bid pipeline, API keys) and `billing` (plans, quotas, Razorpay subscriptions). | "Provide everything to the client". |
-| Production = one VPS with docker compose + Caddy (auto-HTTPS) + nightly `pg_dump` off-site. Vercel/Neon free-tier workarounds are removed. | A proper database without free-tier size hacks. |
+| Production = one VPS with docker compose + Caddy (auto-HTTPS) + nightly `pg_dump` off-site. Until that server exists, the free Vercel + Neon deployment stays live (`vercel.json`, `.github/workflows/crawl.yml`, `docs/DEPLOY.md` "Free hosting on Vercel"): search, alerts, workspaces and billing work there; the Copilot answers extractively (no LLM) and cannot process uploads (no worker). | A proper database without free-tier size hacks, without taking the public site down meanwhile. |
 
 ## 2. Apps and ownership
 
@@ -154,3 +154,93 @@ New: `GET /api/sources` → `[{key, name, kind: "gepnic"|"gem"|"cppp", state|nul
   never touch or bypass a CAPTCHA.
 - Finish with a report: what you built, files touched, test results (exact counts), anything left
   undone or that another stage must wire up.
+
+## 5. Beating the incumbents (added 2026-10-06)
+
+The founder named the competitors to beat: **TenderDetail** (tenderdetail.com) and **TenderKart** (tenderkart.in).
+TenderDetail, read on 2026-10-06, claims 2,03,426+ live Indian tenders, 96,56,053+ tender results,
+12,120+ authorities and 1,00,000+ businesses. It sells three tiers (Standard, Premium, Enterprise)
+with **no published prices** (sales-led, phone and WhatsApp), and keeps every AI feature (short summary,
+competitive bid analysis, bid predictor, probable bidders, missing opportunities) for the top tiers.
+It also sells bid consultancy, digital signatures and MSME loans. It shows no API, no data-freshness
+information and no source citations. TenderKart blocks automated reading; its offer is not yet known.
+
+We do not out-claim their volume on day one. We win on what they cannot easily copy:
+
+| They do | We do |
+|---|---|
+| Prices hidden behind a sales call | Published INR prices, self-serve checkout, a useful free plan forever |
+| AI only on the top tiers | Bid Brief, cited Q&A and Eligibility on **every** plan (quota-limited on free) |
+| "AI summary" with no evidence | Every extracted fact carries a page citation and a link to the source portal; ungrounded answers are refused |
+| Eligibility assessed by a consultant | Automatic eligibility verdict against the company profile, in seconds |
+| Unknown freshness | `/coverage` shows every source with its last successful crawl |
+| Due-date calendar inside their app | Pipeline deadlines as an **iCal feed** the team subscribes to in Google Calendar / Outlook |
+| "Missing opportunities" (top tier) | **Recommended for you** on every plan, from the company profile |
+| Tender results and bidder insights (their strongest asset) | Award data from public GePNIC result pages where reachable without a CAPTCHA, linked to the tender (OCDS awards) |
+| No API | REST API keys and OCDS exports |
+
+### Contract additions
+
+- `GET /api/recommendations?page=` (login; owner **saas**) → paginated tenders like `/api/tenders`, each with
+  `reasons: [str]` (e.g. "Sector: Roads", "State: Chhattisgarh", "Within your turnover limit"). Open tenders only;
+  matches the active organisation's `states`, `sectors` and, when the tender's estimated value is known,
+  excludes tenders whose value exceeds what the company's turnover plausibly qualifies for
+  (default rule: value ≤ 3 × annual_turnover_inr; document it). Excludes tenders already in the pipeline.
+  Empty profile → `{"results": [], "profile_incomplete": true}`.
+- `GET /api/pipeline/calendar.ics?token=<token>` (owner **saas**): an iCal feed of the organisation's tracked,
+  not-yet-submitted tenders (bid submission end and pre-bid meeting as events, with the tender link).
+  Authenticated by an unguessable per-organisation token, not the session, so calendar apps can poll it.
+  `GET /api/workspace` gains `calendar_url`; `POST /api/workspace/calendar-token` rotates it (owner/admin).
+- Awards (owner **sources**, only if the data is publicly reachable without a CAPTCHA; otherwise document why):
+  `Award` (tender FK, bidder name, normalised bidder key, amount_inr, award_date, source_url) and
+  `GET /api/tenders/{id}` gains `awards: [{bidder, amount_inr, award_date}]`; `GET /api/bidders?q=` and
+  `GET /api/bidders/{key}` → `{name, wins, total_value_inr, buyers: [...], sectors: [...], recent: [...]}`.
+  The OCDS export includes `awards` when present.
+- Frontend (owner of the next frontend pass): a "Recommended for you" section on Home/Explore for signed-in
+  users, the calendar subscribe link on Pipeline and Workspace, awards and bidder pages when the API has them,
+  and an installable PWA (manifest + icons) so phones can add TenderLens to the home screen.
+
+## 6. Status (2026-10-06)
+
+Every stage of this spec is built and verified; nothing is committed yet (the commit plan
+groups the work into reviewable commits).
+
+| Stage | Done | Measured |
+|---|---|---|
+| Foundation | Postgres search replaces Elasticsearch (`tenders/search.py`, generated `tsvector` + GIN, `pg_trgm` typo correction); `workspaces`, `billing` (plans, `Usage`, entitlements) scaffolding | search tests green; ES containers no longer needed |
+| LLM kit (`llm/`) | Model choice, llama.cpp serving, prompt, dataset builder, QLoRA + GGUF export scripts, LLM eval | Qwen3.5-4B GGUF serving on CPU at ~37–80 s per answer |
+| Sources | 35 GePNIC portals behind an adapter interface, per-portal staggered beat schedule, `/api/sources` with `last_success` | integration run: 35/35 portals succeeded, 548 listing + 478 detail pages, 472 new + 6 updated tenders, 0 quarantined, 0 dead letters, 0 organisation count mismatches |
+| Copilot | Upload, OCR, chunking with tender context, e5 embeddings, hybrid retrieval (RRF), streaming LLM answers with grounding, extractive fallback, Bid Brief, eligibility | recall@5 93.8% scoped / 92.9% global (439 questions); brief 309/330 fields; live answer 37 s, cited and grounded; LLM down → extractive |
+| SaaS | Workspaces, roles, invites, seats, pipeline + reminders, iCal feed (with pre-bid meetings), recommendations, API keys, CSV, OCDS 1.1, Razorpay subscriptions + webhook | recommendations 53 ms over HTTP on 3,158 tenders; every quota answers 402 |
+| Deploy | Caddy + gunicorn (gthread) prod compose, one-shot migrate with `check --deploy` (fails on any warning), backups + restore drill, CI | image 3.42 GB; full prod stack healthy in 60 s; est. ₹775/month (₹1,275 with the CPU LLM) |
+| Frontend | All of the above in the UI, §5 features, PWA, 375 px layouts | 68 Vitest tests, 106 kB (33 kB gzip) main bundle |
+| Follow-ups | Global Copilot recall 41% → 93%, `Tender.prebid_meeting` (1,132 tenders have one), Razorpay supersede-cancel, alerts on Postgres search | |
+| Integration | Schema warnings fixed, prebid backfill, live bounded crawl of all portals, HTTP smoke on real data, headless screenshots at 375 px and 1280 px, docs | 437 backend + 68 frontend tests green; 4 mobile layout bugs and 1 API bug (alert creation 500 when SMTP is down) fixed |
+
+**Known gaps**
+
+* **Award and bidder data**: every public results page (GePNIC "Results of Tenders",
+  "Tenders Status", CPPP results) is CAPTCHA-gated, and we never bypass a CAPTCHA. Next
+  step: a data-sharing request to NIC and GeM (template and precedents in
+  `docs/SOURCE_NOTES.md`). Until then there is no `Award` model and no `/api/bidders`.
+* **GeM and CPPP** are not crawled for the same reason; same route.
+* **Fine-tuning has not been run**: the host's NVIDIA driver is broken, so the QLoRA kit is
+  untested on a GPU and the default model is the stock Qwen3.5-4B.
+* **No full crawl of the 30 new portals yet**: the integration run was deliberately bounded
+  (25 organisations and 15 detail pages per portal). The first full crawls (≈ 45,000 detail
+  pages) should run on the VPS with the `crawl` worker's thread pool. The `central` index
+  page is slow (it timed out 4 × 30 s once, then loaded); watch it and raise
+  `CRAWLER_TIMEOUT` if it keeps failing.
+* **Dev containers still run the pre-v2 images** (nginx, Elasticsearch, old web image).
+  Rebuild with `make up` (or the `docker:27-cli compose` workaround in the README) and then
+  remove the Elasticsearch container and volume.
+* Cross-portal duplicates: 0 found on 3,158 tenders from 34 portals, so the
+  link-without-merge rule in `SOURCE_NOTES.md` stays planned, not built. Re-run the query
+  after the first full crawls.
+* Live restore into a production stack (`restore.sh live`) and a real LLM answer through the
+  production compose were not exercised; do both on the VPS before launch.
+
+**Next steps (in order)**: rebuild the dev stack on the v2 images; provision the VPS and run
+the first full crawls; register an OCDS prefix and the Razorpay plans and webhook; send the
+NIC/GeM data-sharing requests; fix the GPU driver and run the fine-tuning kit against
+`llm/eval_llm.py`; then launch the free plan publicly.

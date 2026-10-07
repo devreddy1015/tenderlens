@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { Check, CircleCheck, CircleHelp, CircleX, ClipboardCopy, FileSearch, FileText } from "lucide-react";
+import { Check, CircleCheck, CircleHelp, CircleX, ClipboardCopy, FileSearch, FileText, Loader2 } from "lucide-react";
 import { useId, useState } from "react";
 import { Link } from "react-router";
 import { api, type BriefField, type DocScope, type EligibilityCheck, errorMessage } from "../../lib/api";
+import { notReady } from "../../lib/copilot";
 import { formatDate, formatInr } from "../../lib/format";
 import { Button, cx, Skeleton, Tag } from "../ui";
 import { CitationChip, CitationQuote } from "./Citation";
@@ -27,6 +28,9 @@ const BRIEF_LABELS: Record<string, string> = {
 
 const scopeKey = (s: DocScope) => ("tender" in s ? `t${s.tender}` : `d${s.document}`);
 
+/** Refetch every 3 s while the server says the document is still being read. */
+const pollWhileReading = (q: { state: { error: unknown } }) => (notReady(q.state.error) === "processing" ? 3000 : false);
+
 function briefText(fields: BriefField[]): string {
   return fields
     .map((f) => {
@@ -47,6 +51,16 @@ function Loading() {
 }
 
 function Failed({ error }: { error: unknown }) {
+  // 400 {detail, status}: the document isn't ready. While it is being read the query polls,
+  // so the panel fills in by itself.
+  const state = notReady(error);
+  if (state === "processing")
+    return (
+      <p className="flex items-start gap-2 rounded-md border border-line px-3 py-3 text-sm text-ink-2" role="status">
+        <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-signal-text" aria-hidden="true" />
+        This document is still being read (text, OCR and passages). The brief appears here as soon as it's done.
+      </p>
+    );
   return (
     <p className="flex items-start gap-2 rounded-md border border-line px-3 py-3 text-sm text-ink-2">
       <FileSearch className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden="true" />
@@ -58,7 +72,7 @@ function Failed({ error }: { error: unknown }) {
 /** The bid brief: the facts a bidder needs, pulled from the documents by rules (no language
  *  model), each with the page it came from. */
 export function BriefPanel({ scope }: { scope: DocScope }) {
-  const q = useQuery({ queryKey: ["copilot", "brief", scopeKey(scope)], queryFn: () => api.copilot.brief(scope) });
+  const q = useQuery({ queryKey: ["copilot", "brief", scopeKey(scope)], queryFn: () => api.copilot.brief(scope), retry: false, refetchInterval: pollWhileReading });
   const [open, setOpen] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const base = useId();
@@ -70,7 +84,8 @@ export function BriefPanel({ scope }: { scope: DocScope }) {
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="num text-xs text-ink-3">
-          {b.fields.length} found · {b.missing.length} not stated · {formatDate(b.generated_at)}
+          {b.fields.length} found · {b.missing.length} not stated
+          {b.documents !== undefined && ` · ${b.documents} document${b.documents === 1 ? "" : "s"}`} · {formatDate(b.generated_at)}
         </p>
         {b.fields.length > 0 && (
           <Button
@@ -88,9 +103,13 @@ export function BriefPanel({ scope }: { scope: DocScope }) {
           </Button>
         )}
       </div>
-      {b.fields.length === 0 ? (
+      {b.documents === 0 ? (
         <p className="rounded-md border border-line px-3 py-3 text-sm text-ink-2">
-          Nothing could be read from these documents yet. If they are still being read, this fills in once they're ready.
+          None of this tender's documents is ready yet. Upload the NIT and corrigenda; the brief fills in once they have been read.
+        </p>
+      ) : b.fields.length === 0 ? (
+        <p className="rounded-md border border-line px-3 py-3 text-sm text-ink-2">
+          Nothing could be read from these documents. Scanned pages need OCR; check that the PDF has the tender's notice inviting tenders.
         </p>
       ) : (
         <dl className="divide-y divide-line rounded-md border border-line bg-surface">
@@ -154,7 +173,12 @@ const VERDICT = {
 
 /** The brief's qualification criteria against the workspace's company profile. */
 export function EligibilityPanel({ scope }: { scope: DocScope }) {
-  const q = useQuery({ queryKey: ["copilot", "eligibility", scopeKey(scope)], queryFn: () => api.copilot.eligibility(scope) });
+  const q = useQuery({
+    queryKey: ["copilot", "eligibility", scopeKey(scope)],
+    queryFn: () => api.copilot.eligibility(scope),
+    retry: false,
+    refetchInterval: pollWhileReading,
+  });
 
   if (q.isLoading) return <Loading />;
   if (q.isError) return <Failed error={q.error} />;
@@ -186,6 +210,7 @@ export function EligibilityPanel({ scope }: { scope: DocScope }) {
                     <dt className="text-ink-3">Yours</dt>
                     <dd className={c.status === "fail" ? "text-critical" : "text-ink-2"}>{show(c.yours)}</dd>
                   </dl>
+                  {c.note && <p className="mt-1.5 text-xs text-ink-2">{c.note}</p>}
                   {c.source && (
                     <p className="mt-1.5 inline-flex max-w-full items-center gap-1 text-[11.5px] text-ink-3">
                       <FileText className="size-3 shrink-0" aria-hidden="true" />

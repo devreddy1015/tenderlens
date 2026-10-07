@@ -249,7 +249,7 @@ export default function TenderPage() {
                 <Fact label="Tender value" value={formatInr(t.value_inr)} strong />
                 <Fact label="EMD" value={formatInr(t.emd_inr)} strong />
                 <Fact label="Tender fee" value={formatInr(t.fee_inr)} mono />
-                <Fact label="Tender ID" value={<span className="-ml-1 inline-block [&_button]:text-sm [&_button]:text-ink"><CopyId id={t.source_tender_id} /></span>} />
+                <Fact label="Tender ID" value={<span className="-ml-1 inline-block max-w-full [&_button]:max-w-full [&_button]:break-all [&_button]:text-left [&_button]:text-sm [&_button]:text-ink"><CopyId id={t.source_tender_id} /></span>} />
                 <Fact label="Reference number" value={t.ref_no} mono />
                 <Fact label="Tender type" value={t.tender_type} />
                 <Fact label="Portal category" value={t.product_category} />

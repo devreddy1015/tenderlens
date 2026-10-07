@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { type AnswerStatus, type AskEvent, type AskFinal, api, type CopilotDocument, type Passage } from "./api";
+import { type AnswerStatus, ApiError, type AskEvent, type AskFinal, api, type CopilotDocument, type Passage } from "./api";
 import { useSignedIn } from "./queries";
 
 /** Documents of the workspace (or of one tender), polled while any is still being read. */
@@ -25,6 +25,15 @@ export function useRefreshWhenReady(readyCount: number) {
     qc.invalidateQueries({ queryKey: ["copilot", "brief"] });
     qc.invalidateQueries({ queryKey: ["copilot", "eligibility"] });
   }, [readyCount, qc]);
+}
+
+/** A brief or eligibility request on a document that isn't ready answers 400
+ *  {detail, status}; this returns that status ("processing" | "failed"), else null. */
+export function notReady(e: unknown): "processing" | "failed" | null {
+  if (!(e instanceof ApiError) || e.status !== 400) return null;
+  const st = e.body.status;
+  const v = Array.isArray(st) ? st[0] : st;
+  return v === "processing" || v === "failed" ? v : null;
 }
 
 export function useCopilotStatus() {

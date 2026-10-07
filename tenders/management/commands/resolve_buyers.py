@@ -13,9 +13,8 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--rebuild", action="store_true")
-        parser.add_argument("--no-index", action="store_true")
 
-    def handle(self, *args, rebuild, no_index, **opts):
+    def handle(self, *args, rebuild, **opts):
         manual = []
         with transaction.atomic():
             if rebuild:
@@ -58,12 +57,3 @@ class Command(BaseCommand):
             "tenders_relinked": touched,
         }
         self.stdout.write(" ".join(f"{k}={v}" for k, v in stats.items()))
-        if not no_index:
-            from django.conf import settings
-
-            if settings.ES_ENABLED:
-                from tenders import search
-
-                if search.available():
-                    n = search.bulk_index(Tender.objects.select_related("buyer_entity").iterator())
-                    self.stdout.write(f"re-indexed {n} tenders")

@@ -198,7 +198,7 @@ def test_list_filters_by_sector_and_pin_and_sorts(loaded):
 
 
 @pytest.mark.django_db
-def test_similar_tenders_postgres_fallback(loaded):
+def test_similar_tenders_endpoint(loaded):
     t = Tender.objects.get(source_tender_id="2026_DDA_928692_1")
     rows = APIClient().get(f"/api/tenders/{t.pk}/similar").json()
     assert t.pk not in [r["id"] for r in rows]
@@ -268,7 +268,7 @@ def test_private_waitlist_needs_email():
 
 
 @pytest.mark.django_db
-def test_facets_are_disjunctive_in_postgres(loaded):
+def test_facets_are_disjunctive(loaded):
     """Picking a sector must not hide the other sectors' counts."""
     body = APIClient().get("/api/tenders", {"sector": "roads"}).json()
     sectors = {b["key"]: b["count"] for b in body["facets"]["sector"]}

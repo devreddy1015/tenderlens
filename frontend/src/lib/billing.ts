@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { api, errorMessage, type Interval, type Plan } from "./api";
+import { ApiError, api, errorMessage, type Interval, type Plan, quotaExceeded, type Subscription } from "./api";
 import { useAuth } from "./auth";
 import { useSignedIn } from "./queries";
 import { useToast } from "./toast";
@@ -65,55 +65,76 @@ function payWithRazorpay(o: { keyId: string; subscriptionId: string; plan: Plan;
   });
 }
 
-/** Buying a plan. With the fake provider (development) the plan is active at once; with
- *  Razorpay the plan turns on when Razorpay's webhook reaches our server, so the
- *  subscription is polled for a minute after a successful payment. */
+export const ACTIVATION_TIMEOUT_MS = 120_000;
+const POLL_MS = 3000;
+
+type Outcome = "activated" | "paid" | "redirected" | "dismissed";
+
+/** Buying a plan. With the fake provider (development) the plan is active at once. With
+ *  Razorpay the browser opens Razorpay Checkout (key_id + subscription_id); if the script
+ *  can't load, Razorpay's hosted page (short_url) opens instead. Either way the plan turns
+ *  on when Razorpay's webhook reaches our server, so the subscription is polled until it is
+ *  active on the new plan, for up to two minutes. */
 export function useCheckout() {
   const qc = useQueryClient();
   const toast = useToast();
   const { me } = useAuth();
   const signedIn = useSignedIn();
   const [awaiting, setAwaiting] = useState<string | null>(null);
+  const live = (d: Subscription | undefined, code: string) => d?.plan === code && d.status === "active";
 
-  // Poll while a paid plan is on its way; stop when it arrives or after a minute.
   const sub = useQuery({
     queryKey: ["subscription"],
     queryFn: api.billing.subscription,
     enabled: signedIn,
-    refetchInterval: (q) => (awaiting && q.state.data?.plan !== awaiting ? 3000 : false),
+    refetchInterval: (q) => (awaiting && !live(q.state.data, awaiting) ? POLL_MS : false),
   });
+  const arrived = awaiting !== null && live(sub.data, awaiting);
   useEffect(() => {
     if (!awaiting) return;
-    if (sub.data?.plan === awaiting) {
+    if (arrived) {
       setAwaiting(null);
       qc.invalidateQueries({ queryKey: ["workspace"] });
       toast("success", "Your new plan is active.");
       return;
     }
-    const t = setTimeout(() => setAwaiting(null), 60_000);
+    const t = setTimeout(() => {
+      setAwaiting(null);
+      toast("success", "Razorpay is still confirming the payment. Your plan switches as soon as it does; refresh in a minute.");
+    }, ACTIVATION_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [awaiting, sub.data?.plan, qc, toast]);
+  }, [awaiting, arrived, qc, toast]);
 
   const checkout = useMutation({
-    mutationFn: async ({ plan, interval }: { plan: Plan; interval: Interval }) => {
+    mutationFn: async ({ plan, interval }: { plan: Plan; interval: Interval }): Promise<{ plan: Plan; done: Outcome }> => {
       const r = await api.billing.checkout(plan.code, interval);
-      if (r.provider === "fake") return { plan, done: "activated" as const };
-      await loadRazorpay();
+      if (r.provider === "fake") return { plan, done: "activated" };
+      try {
+        await loadRazorpay();
+      } catch (e) {
+        if (!r.short_url) throw e;
+        // Razorpay's hosted payment page does the same job in a new tab.
+        window.open(r.short_url, "_blank", "noopener");
+        return { plan, done: "redirected" };
+      }
       const paid = await payWithRazorpay({ keyId: r.key_id, subscriptionId: r.subscription_id, plan, email: me?.user?.email, name: me?.user?.name });
-      return { plan, done: paid ? ("paid" as const) : ("dismissed" as const) };
+      return { plan, done: paid ? "paid" : "dismissed" };
     },
     onSuccess: ({ plan, done }) => {
       if (done === "activated") {
         toast("success", `You're on the ${plan.name} plan.`);
         qc.invalidateQueries({ queryKey: ["subscription"] });
         qc.invalidateQueries({ queryKey: ["workspace"] });
-      } else if (done === "paid") {
-        toast("success", `Payment received. Switching you to ${plan.name}…`);
+      } else if (done === "paid" || done === "redirected") {
+        toast("success", done === "paid" ? `Payment received. Switching you to ${plan.name}…` : "Complete the payment in the Razorpay tab. This page updates once it's confirmed.");
         setAwaiting(plan.code);
         qc.invalidateQueries({ queryKey: ["subscription"] });
       }
     },
-    onError: (e) => toast("error", e instanceof Error && !("status" in e) ? e.message : errorMessage(e, "Couldn't start the checkout")),
+    onError: (e) => {
+      if (quotaExceeded(e)) return; // the upgrade dialog opens (lib/queryClient.ts)
+      toast("error", e instanceof ApiError ? errorMessage(e, "Couldn't start the checkout") : e instanceof Error ? e.message : "Couldn't start the checkout");
+    },
   });
 
   return { checkout, awaiting };

@@ -23,11 +23,14 @@ SEARCH_VECTOR = """
 # Every distinct word in the searchable text, for typo correction ("toliet" -> "toilet"): the
 # pg_trgm technique of a word list searched by trigram distance, then Levenshtein. Letters
 # only, 3+ characters. Refreshed by tenders.tasks.refresh_search_words.
+# The table is schema-qualified: Postgres 17 (Neon) creates and refreshes a materialized view
+# with search_path "pg_catalog, pg_temp", where the query string ts_stat runs cannot see a
+# bare "tender".
 SEARCH_WORDS = """
     SELECT word, ndoc FROM ts_stat($$
         SELECT to_tsvector('simple'::regconfig, coalesce(title, '') || ' ' || coalesce(buyer_raw, '')
                            || ' ' || coalesce(location, '') || ' ' || coalesce(org_chain, ''))
-        FROM tender
+        FROM public.tender
     $$)
     WHERE length(word) >= 3 AND word ~ '^[a-z]+$'
 """

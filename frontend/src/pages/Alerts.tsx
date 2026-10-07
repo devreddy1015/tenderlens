@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Chip, MultiPicker, SectorToggles } from "../components/MultiPicker";
 import { Button, Card, cx, EmptyState, Field, inputClass, PageHeader, Skeleton, Switch } from "../components/ui";
-import { type Alert, type AlertCriteria, ApiError, api } from "../lib/api";
+import { type Alert, type AlertCriteria, ApiError, api, quotaExceeded } from "../lib/api";
 import { GoogleButton, useAuth } from "../lib/auth";
 import { formatCount, formatDate, formatInr } from "../lib/format";
 import { useDebounced } from "../lib/hooks";
@@ -91,6 +91,7 @@ function AlertForm({
       onSaved();
     },
     onError: (e) => {
+      if (quotaExceeded(e)) return; // the upgrade dialog opens (lib/queryClient.ts)
       if (e instanceof ApiError) {
         setErrors(e.fields);
         toast("error", e.message);

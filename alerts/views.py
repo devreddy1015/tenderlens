@@ -1,4 +1,7 @@
+import logging
+
 from django.core import signing
+from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
@@ -13,10 +16,26 @@ from alerts import emails, matching, tasks
 from alerts.models import AlertSubscription
 from alerts.serializers import AlertCriteriaSerializer, AlertSerializer
 from api.serializers import TenderSerializer
+from billing.entitlements import ensure_capacity
+from workspaces.models import Organization
+from workspaces.services import get_active_org
+
+log = logging.getLogger(__name__)
 
 PreviewSchema = inline_serializer(
     "AlertPreview", {"count": serializers.IntegerField(), "sample": TenderSerializer(many=True)}
 )
+
+
+def enforce_alert_limit(user) -> None:
+    """The plan's `alerts` cap counts every alert of every member of the user's active
+    organisation (a Team plan's 100 alerts are shared). Call it inside the transaction that
+    creates the alert: it locks the organisation row, so parallel creates cannot both take
+    the last slot. Raises QuotaExceeded (402)."""
+    org = get_active_org(user)
+    Organization.objects.select_for_update().filter(pk=org.pk).first()
+    total = AlertSubscription.objects.filter(user__memberships__organization=org).count()
+    ensure_capacity(org, "alerts", current=total)
 
 
 class AlertList(APIView):
@@ -30,9 +49,17 @@ class AlertList(APIView):
     def post(self, request):
         ser = AlertSerializer(data=request.data, context={"request": request})
         ser.is_valid(raise_exception=True)
-        alert = ser.save(user=request.user)
+        with transaction.atomic():
+            enforce_alert_limit(request.user)
+            alert = ser.save(user=request.user)
         # The first digest lists what is open right now, so the alert feels live at once.
-        tasks.send_first_digest.delay(alert.pk)
+        # The alert is already saved: a broker or SMTP failure here must not turn into a 500,
+        # or the user retries and burns their alert quota on duplicates. The hourly
+        # send_alerts run picks the alert up anyway.
+        try:
+            tasks.send_first_digest.delay(alert.pk)
+        except Exception:
+            log.exception("first digest for alert %s not sent; the hourly run will", alert.pk)
         return Response(AlertSerializer(alert).data, status=status.HTTP_201_CREATED)
 
 

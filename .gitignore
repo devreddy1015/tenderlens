@@ -12,3 +12,16 @@ frontend/*.tsbuildinfo
 scripts/.cache/
 .vercel
 .env*.local
+media/
+# Model weights (GBs): download or build them, never commit them
+llm/models/*.gguf
+
+# LLM kit (llm/): model weights and run outputs are large and reproducible
+llm/models/
+*.gguf
+llm/out/
+llm/.venv/
+
+# Bid advisor: raw dataset downloads and trained models (re-creatable: intel_import, intel_train)
+data/intel/raw/
+data/intel/models/

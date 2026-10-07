@@ -17,7 +17,6 @@ def fixture_text(relpath: str) -> str:
 
 @pytest.fixture(autouse=True)
 def _test_settings(settings):
-    settings.ES_ENABLED = False
     settings.CELERY_TASK_ALWAYS_EAGER = True
     settings.CELERY_TASK_EAGER_PROPAGATES = True
     # Private per-test cache: throttle counters must not leak between tests or runs.
@@ -56,6 +55,8 @@ class FakePortal:
         self.overrides: dict[str, str] = {}  # sp -> full html override
         self.hits: dict[str, int] = {}
         self.sessions = 0
+        # robots.txt (ingest/robots.py): GePNIC portals answer 404, i.e. no rules.
+        self.robots: httpx.Response | Exception = httpx.Response(404, text="Not Found")
         router.get(url__regex=r".*").mock(side_effect=self._handle)
 
     @staticmethod
@@ -77,6 +78,11 @@ class FakePortal:
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
+        if urlsplit(url).path == "/robots.txt":
+            self.hits["robots"] = self.hits.get("robots", 0) + 1
+            if isinstance(self.robots, Exception):
+                raise self.robots
+            return self.robots
         q = parse_qs(urlsplit(url).query)
         page = q.get("page", [""])[0]
         sp = q.get("sp", [""])[0]

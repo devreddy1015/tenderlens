@@ -1,13 +1,14 @@
-import { ChevronLeft, ChevronRight, ClipboardList, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { type DragEvent, useEffect, useState } from "react";
 import { Link } from "react-router";
+import { CalendarFeed } from "../components/CalendarFeed";
 import { SignInGate } from "../components/SignIn";
 import { Countdown } from "../components/TenderCard";
-import { Button, ButtonLink, Card, cx, EmptyState, Field, inputClass, PageHeader, Skeleton, Stat, Tag } from "../components/ui";
+import { Button, ButtonLink, Card, cx, Dialog, EmptyState, Field, inputClass, PageHeader, Skeleton, Stat, Tag } from "../components/ui";
 import { BID_STATUSES, type BidStatus, type BidTrack, errorMessage } from "../lib/api";
 import { ACTIVE_STATUSES, BID_STATUS } from "../lib/bids";
 import { countdown, formatCount, formatInr, formatRupees } from "../lib/format";
-import { useMembers, usePipeline, usePipelineSummary, useRemoveTrack, useUpdateTrack } from "../lib/queries";
+import { useMembers, usePipeline, usePipelineSummary, useRemoveTrack, useSignedIn, useUpdateTrack } from "../lib/queries";
 
 const DRAG_TYPE = "application/x-tenderlens-bid";
 
@@ -37,9 +38,10 @@ function BidEditor({ b, onDone }: { b: BidTrack; onDone: () => void }) {
       <Field label="Owner">
         <select value={owner} onChange={(e) => setOwner(e.target.value)} className={cx(inputClass, "h-9")}>
           <option value="">Nobody yet</option>
-          {b.owner && !members.data?.some((m) => m.id === b.owner!.id) && <option value={b.owner.id}>{b.owner.email}</option>}
+          {/* owner is a user id; members are memberships carrying user_id. */}
+          {b.owner && !members.data?.some((m) => m.user_id === b.owner!.id) && <option value={b.owner.id}>{b.owner.email}</option>}
           {members.data?.map((m) => (
-            <option key={m.id} value={m.id}>
+            <option key={m.id} value={m.user_id}>
               {m.name || m.email}
             </option>
           ))}
@@ -224,7 +226,9 @@ function Summary() {
         <Stat className="bg-surface px-4 py-4" label="Won" value={d ? formatCount(d.by_status.won ?? 0) : <Skeleton className="h-7 w-10" />} hint="awarded to you" />
       </dl>
       <div className="bg-surface px-4 py-4">
-        <p className="label">Closing soon</p>
+        <p className="label">
+          Closing in 7 days{d && d.closing_soon.length > 0 && <span className="num ml-1.5 text-critical">{d.closing_soon.length}</span>}
+        </p>
         {!d ? (
           <Skeleton className="mt-3 h-12 w-full" />
         ) : d.closing_soon.length === 0 ? (
@@ -312,7 +316,7 @@ function Board() {
         {announce}
       </p>
       <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-        <div className="grid min-w-max auto-cols-[minmax(232px,1fr)] grid-flow-col gap-3 xl:min-w-0">
+        <div className="grid min-w-max auto-cols-[232px] grid-flow-col gap-3 xl:min-w-0 xl:auto-cols-[minmax(232px,1fr)]">
           {BID_STATUSES.map((s) => (
             <Column
               key={s}
@@ -332,15 +336,24 @@ function Board() {
 }
 
 export default function Pipeline() {
+  const signedIn = useSignedIn();
+  const [calendar, setCalendar] = useState(false);
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
       <PageHeader
         kicker="Pipeline"
         title="Bid pipeline"
         actions={
-          <ButtonLink to="/tenders">
-            <Search className="size-4" aria-hidden="true" /> Find tenders
-          </ButtonLink>
+          <>
+            {signedIn && (
+              <Button onClick={() => setCalendar(true)}>
+                <CalendarDays className="size-4" aria-hidden="true" /> Add deadlines to calendar
+              </Button>
+            )}
+            <ButtonLink to="/tenders">
+              <Search className="size-4" aria-hidden="true" /> Find tenders
+            </ButtonLink>
+          </>
         }
       >
         Every tender your team is working on, from first look to award. Owners get an email when a tracked bid is three days from closing and not yet submitted.
@@ -348,6 +361,9 @@ export default function Pipeline() {
       <SignInGate title="Sign in to manage your bids" pitch="Track tenders from Explore, move them from watching to submitted, and share the board with your team.">
         <Board />
       </SignInGate>
+      <Dialog open={calendar} onClose={() => setCalendar(false)} title="Deadlines in your calendar">
+        <CalendarFeed />
+      </Dialog>
     </div>
   );
 }

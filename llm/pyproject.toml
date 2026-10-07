@@ -19,9 +19,11 @@ train = [
     "bitsandbytes>=0.47",
     "datasets>=3.0",
     "accelerate>=1.5",
+    # llama.cpp's convert_hf_to_gguf.py imports it unconditionally (export_gguf.py)
+    "sentencepiece>=0.2",
 ]
-# Optional: ~2x faster QLoRA with fused kernels. train_qlora.py uses it when installed and
-# --unsloth is passed; the plain PEFT path is the default because it has fewer moving parts.
+# Optional, not wired into train_qlora.py yet: ~2x faster QLoRA with fused kernels. The plain
+# PEFT + Trainer path is the default because it has fewer moving parts.
 unsloth = ["unsloth>=2026.9"]
 
 [dependency-groups]

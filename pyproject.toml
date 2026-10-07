@@ -21,12 +21,20 @@ dependencies = [
     "google-auth>=2.38",
     "requests>=2.32",
     "whitenoise>=6.8",
-    # Copilot: PDF text, embeddings (pgvector) and the optional cross-encoder reranker.
+    # Copilot: PDF text and embedding storage (pgvector).
     "pgvector>=0.3",
     "pymupdf>=1.25",
+    "numpy>=2.0",
+    "lightgbm>=4.5",
+]
+
+[project.optional-dependencies]
+# The embedding model and reranker (~1.2 GB with torch). An extra, not a default, so a host
+# that only serves the API (Vercel caps a Python function at 500 MB) can skip it. The Docker
+# image, CI and local dev install it: `uv sync --extra copilot`.
+copilot = [
     "sentence-transformers>=3.3",
     "torch>=2.5",
-    "numpy>=2.0",
 ]
 
 [dependency-groups]

@@ -1,9 +1,7 @@
-import logging
 from datetime import timedelta
-from decimal import Decimal
 
 from django.db import connection
-from django.db.models import Count, F, Prefetch, Q, Sum
+from django.db.models import Count, Prefetch, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -24,15 +22,6 @@ from ingest.models import CrawlRun, DeadLetter, Quarantine
 from tenders import search
 from tenders.models import BuyerAlias, BuyerEntity, Tender
 
-log = logging.getLogger(__name__)
-
-VALUE_BUCKETS = [
-    ("under_10_lakh", None, Decimal(1_000_000)),
-    ("10_lakh_to_1_crore", Decimal(1_000_000), Decimal(10_000_000)),
-    ("1_to_10_crore", Decimal(10_000_000), Decimal(100_000_000)),
-    ("over_10_crore", Decimal(100_000_000), None),
-]
-
 
 def _page_link(request, page: int | None) -> str | None:
     if page is None:
@@ -42,83 +31,15 @@ def _page_link(request, page: int | None) -> str | None:
     return request.build_absolute_uri(f"{request.path}?{params.urlencode()}")
 
 
-FACET_PARAMS = {
-    "state": ("state",),
-    "sector": ("sector",),
-    "category": ("category",),
-    "value_range": ("min_value", "max_value"),
-}
-
-
-def _db_queryset(p: dict, *, skip: tuple[str, ...] = ()):
-    qs = Tender.objects.select_related("buyer_entity")
-    if p.get("q"):
-        q = p["q"]
-        qs = qs.filter(
-            Q(title__icontains=q)
-            | Q(buyer_raw__icontains=q)
-            | Q(ref_no__icontains=q)
-            | Q(source_tender_id__iexact=q)
-        )
-    for field in ("state", "sector", "category", "source"):
-        if p.get(field) and field not in skip:
-            qs = qs.filter(**{field: p[field]})
-    if p.get("pin"):
-        qs = qs.filter(pincode__startswith=p["pin"])
-    if p.get("buyer"):
-        qs = qs.filter(buyer_entity_id=p["buyer"])
-    if p.get("min_value") is not None and "min_value" not in skip:
-        qs = qs.filter(value_inr__gte=p["min_value"])
-    if p.get("max_value") is not None and "max_value" not in skip:
-        qs = qs.filter(value_inr__lte=p["max_value"])
-    if p.get("closes_before"):
-        qs = qs.filter(closes_at__lte=p["closes_before"])
-    if p.get("closes_after"):
-        qs = qs.filter(closes_at__gte=p["closes_after"])
-    return qs
-
-
-def _db_facets(p: dict) -> dict:
-    """Same disjunctive counting as the Elasticsearch path."""
-
-    def terms(field):
-        qs = _db_queryset(p, skip=FACET_PARAMS[field])
-        rows = qs.exclude(**{field: ""}).values(field).annotate(n=Count("id")).order_by("-n")[:40]
-        return [{"key": r[field], "count": r["n"]} for r in rows]
-
-    base = _db_queryset(p, skip=FACET_PARAMS["value_range"])
-    ranges = []
-    for key, lo, hi in VALUE_BUCKETS:
-        sub = base
-        if lo is not None:
-            sub = sub.filter(value_inr__gte=lo)
-        if hi is not None:
-            sub = sub.filter(value_inr__lt=hi)
-        ranges.append({"key": key, "count": sub.exclude(value_inr__isnull=True).count()})
-    return {
-        "state": terms("state"),
-        "sector": terms("sector"),
-        "category": terms("category"),
-        "value_range": ranges,
-    }
-
-
-DB_ORDER = {
-    "relevance": ("closes_at", "id"),
-    "closing": ("closes_at", "id"),
-    "newest": ("-published_at", "id"),
-    "value": (F("value_inr").desc(nulls_last=True), "closes_at"),
-}
-
-
 class TenderList(APIView):
     @extend_schema(
+        operation_id="api_tenders_list",
         parameters=[TenderQuerySerializer],
         responses=TenderPageSerializer,
         description=(
-            "Search and filter tenders. Uses Elasticsearch (fuzzy, partial-word matching, "
-            "facets) when it is reachable and falls back to Postgres otherwise; "
-            "`search_backend` says which one answered."
+            "Search and filter tenders: Postgres full-text search with prefix matching, "
+            "typo correction (`corrected`), an any-word fallback (`relaxed`) and disjunctive "
+            "facets. `search_backend` is always `postgres`."
         ),
     )
     def get(self, request):
@@ -126,34 +47,19 @@ class TenderList(APIView):
         qs_ser.is_valid(raise_exception=True)
         p = qs_ser.validated_data
         page, size = p["page"], p["page_size"]
-        es_params = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in p.items()}
-
-        backend, relaxed = "postgres", False
-        if search.available():
-            try:
-                res = search.search(es_params, page=page, page_size=size)
-                by_id = Tender.objects.select_related("buyer_entity").in_bulk(res["ids"])
-                rows = [by_id[i] for i in res["ids"] if i in by_id]
-                total, facets, backend = res["total"], res["facets"], "elasticsearch"
-                relaxed = res["relaxed"]
-            except Exception:
-                log.exception("elasticsearch query failed; falling back to postgres")
-        if backend == "postgres":
-            base = _db_queryset(p)
-            total = base.count()
-            rows = list(base.order_by(*DB_ORDER[p["sort"]])[(page - 1) * size : page * size])
-            facets = _db_facets(p)
-
+        res = search.search(p, page=page, page_size=size)
+        total = res["total"]
         last_page = max(1, -(-total // size))
         return Response(
             {
                 "count": total,
                 "next": _page_link(request, page + 1 if page < last_page else None),
                 "previous": _page_link(request, page - 1 if page > 1 else None),
-                "search_backend": backend,
-                "relaxed": relaxed,
-                "facets": facets,
-                "results": TenderSerializer(rows, many=True).data,
+                "search_backend": "postgres",
+                "relaxed": res["relaxed"],
+                "corrected": res["corrected"],
+                "facets": res["facets"],
+                "results": TenderSerializer(res["results"], many=True).data,
             }
         )
 
@@ -269,7 +175,6 @@ def health(request):
         checks["redis"] = "ok"
     except Exception as exc:
         checks["redis"] = f"error: {type(exc).__name__}"
-    checks["elasticsearch"] = "ok" if search.available() else "unavailable"
 
     since = timezone.now() - timedelta(hours=24)
     runs = CrawlRun.objects.filter(started__gte=since)
@@ -292,27 +197,7 @@ class SimilarTenders(APIView):
     @extend_schema(responses=TenderSerializer(many=True))
     def get(self, request, pk: int):
         tender = get_object_or_404(Tender, pk=pk)
-        ids: list[int] = []
-        if search.available():
-            try:
-                ids = [i for i in search.similar(tender) if i != tender.pk]
-            except Exception:
-                log.exception("similar-tenders query failed; falling back to postgres")
-        if ids:
-            by_id = Tender.objects.select_related("buyer_entity").in_bulk(ids)
-            rows = [by_id[i] for i in ids if i in by_id]
-        else:
-            # Same sector, same state first, then the same sector anywhere.
-            base = (
-                Tender.objects.select_related("buyer_entity")
-                .filter(sector=tender.sector, closes_at__gte=timezone.now())
-                .exclude(pk=tender.pk)
-            )
-            rows = list(base.filter(state=tender.state).order_by("closes_at")[:6])
-            if len(rows) < 6:
-                rows += list(
-                    base.exclude(pk__in=[r.pk for r in rows]).order_by("closes_at")[: 6 - len(rows)]
-                )
+        rows = search.similar(tender)
         return Response(TenderSerializer(rows, many=True).data)
 
 

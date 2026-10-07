@@ -177,7 +177,7 @@ function CopilotDesk() {
     });
 
   return (
-    <div className="mt-8 grid gap-6 lg:grid-cols-[360px_1fr]">
+    <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
       <div className="space-y-4">
         <TenderPicker tenderId={tenderId} onChange={pickTender} />
         <Card>

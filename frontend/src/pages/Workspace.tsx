@@ -1,17 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Mail, ShieldAlert, Trash2, UserPlus } from "lucide-react";
+import { Check, Copy, KeyRound, LogOut, Mail, ShieldAlert, Trash2, UserPlus, X } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { useLocation } from "react-router";
+import { Link, useLocation } from "react-router";
+import { CalendarFeed } from "../components/CalendarFeed";
 import { MultiPicker, SectorToggles } from "../components/MultiPicker";
 import { SignInGate } from "../components/SignIn";
 import { UpgradeNotice } from "../components/Upgrade";
 import { UsageMeters } from "../components/UsageMeters";
 import { Button, ButtonLink, Card, cx, EmptyState, Field, inputClass, PageHeader, Skeleton, Tag } from "../components/ui";
-import { api, ApiError, errorMessage, type NewApiKey, quotaExceeded, type Role, type Workspace, type WorkspacePatch } from "../lib/api";
+import { api, ApiError, errorMessage, type Member, type NewApiKey, quotaExceeded, type Role, type Workspace, type WorkspacePatch } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatDate, formatInr } from "../lib/format";
-import { byPrice, includes } from "../lib/plans";
-import { useMembers, usePlans, useSubscription, useWorkspace } from "../lib/queries";
+import { includes } from "../lib/plans";
+import { resetWorkspaceData, useMembers, useSubscription, useWorkspace } from "../lib/queries";
 import { INDIAN_STATES } from "../lib/states";
 import { useToast } from "../lib/toast";
 
@@ -212,33 +213,66 @@ function Team({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
   const toast = useToast();
   const { me } = useAuth();
   const members = useMembers();
+  const invites = useQuery({ queryKey: ["invites"], queryFn: api.workspace.invites, enabled: canEdit });
+  const isOwner = ws.role === "owner";
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("member");
   const [confirm, setConfirm] = useState<number | null>(null);
+  const [confirmInvite, setConfirmInvite] = useState<number | null>(null);
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["members"] });
+    qc.invalidateQueries({ queryKey: ["invites"] });
+    qc.invalidateQueries({ queryKey: ["workspace"] });
+  };
   const invite = useMutation({
     mutationFn: () => api.workspace.invite(email.trim(), role),
+    meta: { inlineQuota: true },
     onSuccess: () => {
       toast("success", `Invite sent to ${email.trim()}`);
       setEmail("");
-      qc.invalidateQueries({ queryKey: ["members"] });
+      refresh();
     },
     onError: (e) => {
       if (!quotaExceeded(e)) toast("error", errorMessage(e, "Couldn't send the invite"));
     },
   });
   const remove = useMutation({
-    mutationFn: api.workspace.removeMember,
-    onSuccess: () => {
+    mutationFn: ({ id }: { id: number; self: boolean }) => api.workspace.removeMember(id),
+    onSuccess: (_r, { self }) => {
       setConfirm(null);
-      qc.invalidateQueries({ queryKey: ["members"] });
-      qc.invalidateQueries({ queryKey: ["workspace"] });
-      toast("success", "Removed from the workspace");
+      if (self) {
+        // Leaving: the server falls back to another workspace (or a new personal one).
+        resetWorkspaceData(qc);
+        toast("success", `You left ${ws.name}`);
+      } else {
+        refresh();
+        toast("success", "Removed from the workspace");
+      }
     },
     onError: (e) => toast("error", errorMessage(e, "Couldn't remove them")),
   });
+  const changeRole = useMutation({
+    mutationFn: ({ id, role }: { id: number; role: Role }) => api.workspace.setRole(id, role),
+    onSuccess: (m) => {
+      qc.setQueryData<Member[]>(["members"], (rows) => rows?.map((r) => (r.id === m.id ? m : r)));
+      toast("success", `${m.name || m.email} is now ${ROLE_LABEL[m.role].toLowerCase()}`);
+    },
+    onError: (e) => toast("error", errorMessage(e, "Couldn't change the role")),
+  });
+  const revoke = useMutation({
+    mutationFn: api.workspace.revokeInvite,
+    onSuccess: () => {
+      setConfirmInvite(null);
+      refresh();
+      toast("success", "Invite revoked");
+    },
+    onError: (e) => toast("error", errorMessage(e, "Couldn't revoke the invite")),
+  });
   const seats = ws.plan.limits.seats;
+  const pending = invites.data?.length ?? 0;
   const quota = quotaExceeded(invite.error);
   const fieldErr = invite.error instanceof ApiError ? (invite.error.fields.email?.[0] ?? invite.error.fields.role?.[0]) : undefined;
+  const canRemove = (target: Role) => isOwner || (ws.role === "admin" && target === "member");
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
@@ -254,9 +288,12 @@ function Team({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
           <ul className="divide-y divide-line">
             {members.data?.map((m) => {
               const self = m.email === me?.user?.email;
+              const asking = confirm === m.id;
               return (
                 <li key={m.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <span className="num grid size-8 shrink-0 place-items-center rounded-md border border-line bg-surface-2 text-sm text-ink">{(m.name || m.email)[0]?.toUpperCase()}</span>
+                  <span className="num grid size-8 shrink-0 place-items-center rounded-md border border-line bg-surface-2 text-sm text-ink" aria-hidden="true">
+                    {(m.name || m.email)[0]?.toUpperCase()}
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">
                       {m.name || m.email} {self && <span className="font-normal text-ink-3">(you)</span>}
@@ -265,23 +302,41 @@ function Team({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
                       {m.email} · joined {formatDate(m.joined_at, false)}
                     </p>
                   </div>
-                  <Tag tone={m.role === "owner" ? "signal" : undefined}>{ROLE_LABEL[m.role] ?? m.role}</Tag>
-                  {canEdit &&
-                    !self &&
-                    m.role !== "owner" &&
-                    (confirm === m.id ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-ink-2">
-                        Remove?
-                        <Button size="sm" variant="danger" className="h-7" onClick={() => remove.mutate(m.id)} disabled={remove.isPending}>
-                          Remove
+                  {isOwner && !self ? (
+                    <select
+                      value={m.role}
+                      onChange={(e) => changeRole.mutate({ id: m.id, role: e.target.value as Role })}
+                      disabled={changeRole.isPending}
+                      aria-label={`Role of ${m.email}`}
+                      className={cx(inputClass, "h-8 w-auto pr-7 text-xs")}
+                    >
+                      {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABEL[r]}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Tag tone={m.role === "owner" ? "signal" : undefined}>{ROLE_LABEL[m.role] ?? m.role}</Tag>
+                  )}
+                  {(self || canRemove(m.role)) &&
+                    (asking ? (
+                      <span className="inline-flex w-full flex-wrap items-center justify-end gap-1.5 text-xs text-ink-2 sm:w-auto" role="group" aria-label={self ? "Confirm leaving" : `Confirm removing ${m.email}`}>
+                        {self ? `Leave ${ws.name}? You lose its pipeline and documents.` : "Remove?"}
+                        <Button size="sm" variant="danger" className="h-7" onClick={() => remove.mutate({ id: m.id, self })} disabled={remove.isPending}>
+                          {self ? "Leave" : "Remove"}
                         </Button>
                         <Button size="sm" variant="ghost" className="h-7" onClick={() => setConfirm(null)}>
-                          Keep
+                          {self ? "Stay" : "Keep"}
                         </Button>
                       </span>
+                    ) : self ? (
+                      <Button size="sm" variant="ghost" className="h-7" onClick={() => setConfirm(m.id)}>
+                        <LogOut className="size-3.5" aria-hidden="true" /> Leave
+                      </Button>
                     ) : (
-                      <button type="button" onClick={() => setConfirm(m.id)} className="text-ink-3 hover:text-critical" aria-label={`Remove ${m.email}`}>
-                        <Trash2 className="size-4" />
+                      <button type="button" onClick={() => setConfirm(m.id)} className="grid size-7 place-items-center rounded text-ink-3 hover:text-critical" aria-label={`Remove ${m.email}`}>
+                        <Trash2 className="size-4" aria-hidden="true" />
                       </button>
                     ))}
                 </li>
@@ -290,7 +345,8 @@ function Team({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
           </ul>
         )}
         <p className="num border-t border-line px-4 py-2.5 text-xs text-ink-3">
-          {members.data?.length ?? "–"} of {seats === null ? "unlimited" : (seats ?? 1)} seats used
+          {ws.usage.seats ?? members.data?.length ?? "–"} of {seats === null ? "unlimited" : (seats ?? 1)} seats used
+          {pending > 0 && ` · ${pending} pending invite${pending === 1 ? "" : "s"} also hold${pending === 1 ? "s" : ""} a seat`}
         </p>
       </Card>
 
@@ -299,28 +355,64 @@ function Team({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
           <UserPlus className="size-3.5 text-signal-text" aria-hidden="true" /> Invite a teammate
         </p>
         {canEdit ? (
-          <form
-            className="mt-4 space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              invite.mutate();
-            }}
-          >
-            <Field label="Email" error={fieldErr}>
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="colleague@company.com" />
-            </Field>
-            <Field label="Role" hint={role === "admin" ? "Admins manage the profile, team, billing and API keys." : "Members use search, the Copilot and the pipeline."}>
-              <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={inputClass}>
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-            </Field>
-            <Button type="submit" variant="primary" className="w-full" disabled={invite.isPending}>
-              <Mail className="size-4" aria-hidden="true" /> {invite.isPending ? "Sending…" : "Send invite"}
-            </Button>
-            {quota && <UpgradeNotice limit={quota.limit} message={quota.message} />}
-            <p className="text-xs text-ink-3">They get an email with a link that signs them in to this workspace.</p>
-          </form>
+          <>
+            <form
+              className="mt-4 space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                invite.mutate();
+              }}
+            >
+              <Field label="Email" error={fieldErr}>
+                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="colleague@company.com" />
+              </Field>
+              <Field label="Role" hint={role === "admin" ? "Admins manage the profile, team, billing and API keys." : "Members use search, the Copilot and the pipeline."}>
+                <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={inputClass}>
+                  <option value="member">Member</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </Field>
+              <Button type="submit" variant="primary" className="w-full" disabled={invite.isPending}>
+                <Mail className="size-4" aria-hidden="true" /> {invite.isPending ? "Sending…" : "Send invite"}
+              </Button>
+              {quota && <UpgradeNotice limit={quota.limit} message={quota.message} />}
+              <p className="text-xs text-ink-3">They get an email with a link. They must sign in with that address to join.</p>
+            </form>
+            {pending > 0 && (
+              <div className="mt-5 border-t border-line pt-4">
+                <p className="label mb-2">Pending invites</p>
+                <ul className="space-y-2">
+                  {invites.data!.map((i) => (
+                    <li key={i.id} className="text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-ink" title={i.email}>
+                          {i.email}
+                        </span>
+                        <Tag className="h-5 px-1.5 text-[11px]">{ROLE_LABEL[i.role] ?? i.role}</Tag>
+                        {confirmInvite !== i.id && (
+                          <button type="button" onClick={() => setConfirmInvite(i.id)} className="grid size-7 place-items-center rounded text-ink-3 hover:text-critical" aria-label={`Revoke invite for ${i.email}`}>
+                            <X className="size-4" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                      <p className="num text-[11px] text-ink-3">expires {formatDate(i.expires_at, false)}</p>
+                      {confirmInvite === i.id && (
+                        <span className="mt-1 inline-flex items-center gap-1.5 text-xs text-ink-2">
+                          Revoke? The link stops working.
+                          <Button size="sm" variant="danger" className="h-7" onClick={() => revoke.mutate(i.id)} disabled={revoke.isPending}>
+                            Revoke
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7" onClick={() => setConfirmInvite(null)}>
+                            Keep
+                          </Button>
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
         ) : (
           <p className="mt-3 text-sm text-ink-2">Ask an owner or admin to invite people.</p>
         )}
@@ -336,17 +428,22 @@ function Billing({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
   const [confirm, setConfirm] = useState(false);
   const cancel = useMutation({
     mutationFn: api.billing.cancel,
-    onSuccess: () => {
+    onSuccess: (next) => {
       setConfirm(false);
-      qc.invalidateQueries({ queryKey: ["subscription"] });
+      qc.setQueryData(["subscription"], next);
       qc.invalidateQueries({ queryKey: ["workspace"] });
-      toast("success", "Subscription cancelled");
+      toast(
+        "success",
+        next.cancel_at_period_end && next.current_period_end
+          ? `Cancelled. ${ws.plan.name} stays active until ${formatDate(next.current_period_end, false)}, then you move to Free.`
+          : "Subscription cancelled. You're on the Free plan now.",
+      );
     },
     onError: (e) => toast("error", errorMessage(e, "Couldn't cancel the subscription")),
   });
   const s = sub.data;
   const paid = ws.plan.code !== "free" && (Number(ws.plan.price_inr_month) > 0 || ws.plan.price_inr_month === null);
-  const cancelled = s && /cancel/i.test(s.status);
+  const cancelled = !!s && (s.cancel_at_period_end || /cancel/i.test(s.status));
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
@@ -354,7 +451,11 @@ function Billing({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
         <p className="label">Plan</p>
         <div className="mt-3 flex flex-wrap items-baseline gap-3">
           <p className="text-2xl font-semibold text-ink">{ws.plan.name}</p>
-          {s && <Tag tone={s.status === "active" ? "good" : cancelled ? "critical" : undefined}>{s.status}</Tag>}
+          {s && s.status !== "none" && (
+            <Tag tone={s.cancel_at_period_end ? "critical" : s.status === "active" ? "good" : cancelled ? "critical" : undefined}>
+              {s.cancel_at_period_end ? "cancels at period end" : s.status}
+            </Tag>
+          )}
         </div>
         {sub.isLoading ? (
           <Skeleton className="mt-4 h-16 w-full" />
@@ -380,6 +481,16 @@ function Billing({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
             )}
           </dl>
         ) : null}
+        {s?.cancel_at_period_end && s.current_period_end && (
+          <p className="mt-3 rounded-md border border-line bg-surface-2/60 px-3 py-2 text-sm text-ink-2">
+            Cancelled. {ws.plan.name} stays active until <span className="num text-ink">{formatDate(s.current_period_end, false)}</span>, then the workspace moves to Free.
+          </p>
+        )}
+        {s && ["pending", "halted"].includes(s.status) && (
+          <p className="mt-3 rounded-md border border-critical/40 bg-critical-soft px-3 py-2 text-sm text-ink">
+            Razorpay couldn't charge the last payment. Update the payment method from Razorpay's email, or choose the plan again.
+          </p>
+        )}
         <div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4">
           <ButtonLink to="/pricing" variant={paid ? "secondary" : "primary"}>
             {paid ? "Change plan" : "Upgrade"}
@@ -416,7 +527,6 @@ function Billing({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
 function ApiKeys({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const plans = usePlans();
   const allowed = includes(ws.plan, "api");
   const keys = useQuery({ queryKey: ["api-keys"], queryFn: api.workspace.apiKeys, enabled: allowed });
   const [name, setName] = useState("");
@@ -425,6 +535,7 @@ function ApiKeys({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
   const [confirm, setConfirm] = useState<number | null>(null);
   const create = useMutation({
     mutationFn: () => api.workspace.createApiKey(name.trim() || "API key"),
+    meta: { inlineQuota: true },
     onSuccess: (k) => {
       setFresh(k);
       setName("");
@@ -446,20 +557,20 @@ function ApiKeys({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   if (!allowed) {
-    const withApi = byPrice(plans.data ?? []).find((p) => includes(p, "api"));
     return (
-      <EmptyState icon={<KeyRound className="size-5" />} title="API access isn't on your plan">
-        {withApi ? `It comes with the ${withApi.name} plan.` : "It comes with a higher plan."} The OCDS release feed at{" "}
-        <a href="/api/ocds/releases" className="num text-ink underline decoration-line-strong underline-offset-4">
-          /api/ocds/releases
-        </a>{" "}
-        is open to everyone.
-        <div className="mt-4">
-          <ButtonLink to="/pricing" size="sm">
-            See plans
-          </ButtonLink>
-        </div>
-      </EmptyState>
+      <div className="space-y-3">
+        <UpgradeNotice limit="api" />
+        <p className="text-sm text-ink-2">
+          The OCDS release feed at{" "}
+          <a href="/api/ocds/releases" className="num text-ink underline decoration-line-strong underline-offset-4">
+            /api/ocds/releases
+          </a>{" "}
+          is open to everyone, no key needed.{" "}
+          <Link to="/developers" className="font-medium text-ink underline decoration-line-strong underline-offset-4 hover:decoration-signal">
+            Developer guide
+          </Link>
+        </p>
+      </div>
     );
   }
   const quota = quotaExceeded(create.error);
@@ -503,7 +614,8 @@ function ApiKeys({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
                   <p className="truncate text-sm font-medium text-ink">{k.name}</p>
                   <p className="num text-xs text-ink-3">
                     {k.prefix ? `${k.prefix}… · ` : ""}created {formatDate(k.created_at, false)}
-                    {k.last_used_at !== undefined && ` · ${k.last_used_at ? `last used ${formatDate(k.last_used_at)}` : "never used"}`}
+                    {k.created_by && ` by ${k.created_by}`}
+                    {` · ${k.last_used_at ? `last used ${formatDate(k.last_used_at)}` : "never used"}`}
                   </p>
                 </div>
                 {canEdit &&
@@ -519,7 +631,7 @@ function ApiKeys({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
                     </span>
                   ) : (
                     <button type="button" onClick={() => setConfirm(k.id)} className="text-ink-3 hover:text-critical" aria-label={`Revoke ${k.name}`}>
-                      <Trash2 className="size-4" />
+                      <Trash2 className="size-4" aria-hidden="true" />
                     </button>
                   ))}
               </li>
@@ -554,11 +666,15 @@ function ApiKeys({ ws, canEdit }: { ws: Workspace; canEdit: boolean }) {
           {`curl -H "Authorization: Api-Key <your key>" \\\n  "${origin}/api/tenders?q=road&state=Odisha"`}
         </pre>
         <p className="mt-2 text-xs text-ink-3">
-          Same filters as Explore. Reference:{" "}
+          Same filters as Explore. Guide:{" "}
+          <Link to="/developers" className="text-ink underline decoration-line-strong underline-offset-4">
+            Developers
+          </Link>
+          ; reference:{" "}
           <a href="/api/docs/" className="text-ink underline decoration-line-strong underline-offset-4">
             API documentation
           </a>
-          . Every record carries its source portal; keep the attribution when you show the data.
+          . A key acts as the person who created it and stops working if they leave. Every record carries its source portal; keep the attribution when you show the data.
         </p>
       </div>
     </div>
@@ -595,6 +711,7 @@ function WorkspaceBody() {
           {[
             ["profile", "Profile"],
             ["team", "Team"],
+            ["calendar", "Calendar"],
             ["billing", "Billing & usage"],
             ["api", "API keys"],
           ].map(([id, label]) => (
@@ -611,10 +728,15 @@ function WorkspaceBody() {
         <Section id="team" index="02" title="Team" hint="Everyone here shares the pipeline, the documents and the plan's limits.">
           <Team ws={w} canEdit={canEdit} />
         </Section>
-        <Section id="billing" index="03" title="Billing & usage">
+        <Section id="calendar" index="03" title="Calendar feed" hint="Your pipeline's bid deadlines in Google Calendar, Outlook or Apple Calendar.">
+          <Card className="max-w-3xl p-5">
+            <CalendarFeed />
+          </Card>
+        </Section>
+        <Section id="billing" index="04" title="Billing & usage">
           <Billing ws={w} canEdit={canEdit} />
         </Section>
-        <Section id="api" index="04" title="API keys" hint="For your own systems: the same tender search as a JSON API.">
+        <Section id="api" index="05" title="API keys" hint="For your own systems: the same tender search as a JSON API.">
           <ApiKeys ws={w} canEdit={canEdit} />
         </Section>
       </div>

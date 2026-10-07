@@ -7,7 +7,7 @@ from datetime import datetime
 from django.db import connection, transaction
 
 from ingest.models import Quarantine, RawPage
-from ingest.parsers import gepnic
+from ingest.parsers import DETAIL_PARSERS, gepnic
 from ingest.sources import get_source
 from ingest.validation import TenderIn, validate_detail
 from tenders import resolution
@@ -25,12 +25,13 @@ UPSERT_SQL = """
 INSERT INTO tender (
     source, source_tender_id, ref_no, title, buyer_raw, buyer_entity_id, org_chain,
     category, product_category, tender_type, sector, value_inr, emd_inr, fee_inr,
-    published_at, closes_at, opens_at, location, pincode, state, url,
+    published_at, closes_at, opens_at, prebid_meeting, location, pincode, state, url,
     content_hash, fetched_at, raw_page_id, first_seen, last_seen
 ) VALUES (
     %(source)s, %(source_tender_id)s, %(ref_no)s, %(title)s, %(buyer_raw)s, %(buyer_entity_id)s,
     %(org_chain)s, %(category)s, %(product_category)s, %(tender_type)s, %(sector)s, %(value_inr)s,
-    %(emd_inr)s, %(fee_inr)s, %(published_at)s, %(closes_at)s, %(opens_at)s, %(location)s,
+    %(emd_inr)s, %(fee_inr)s, %(published_at)s, %(closes_at)s, %(opens_at)s,
+    %(prebid_meeting)s, %(location)s,
     %(pincode)s, %(state)s, %(url)s, %(content_hash)s, %(fetched_at)s, %(raw_page_id)s,
     %(fetched_at)s, %(fetched_at)s
 )
@@ -50,6 +51,8 @@ ON CONFLICT (source, source_tender_id) DO UPDATE SET
     published_at = EXCLUDED.published_at,
     closes_at = EXCLUDED.closes_at,
     opens_at = EXCLUDED.opens_at,
+    -- A portal that says "NA" keeps a date the Copilot read from the tender's documents.
+    prebid_meeting = COALESCE(EXCLUDED.prebid_meeting, tender.prebid_meeting),
     location = EXCLUDED.location,
     pincode = EXCLUDED.pincode,
     state = EXCLUDED.state,
@@ -109,11 +112,11 @@ def quarantine(raw: dict, errors: list[dict], *, source: str, raw_page_id: int |
     )
 
 
-def load_detail_page(page: RawPage, *, index: bool = True) -> LoadResult:
+def load_detail_page(page: RawPage) -> LoadResult:
     """Parse one stored detail page and load it. Safe to call any number of times."""
     source = get_source(page.source)
     try:
-        raw = gepnic.parse_detail(page.body)
+        raw = DETAIL_PARSERS[source.kind].parse_detail(page.body)
     except gepnic.NotADetailPage as exc:
         errors = [{"field": "__page__", "error": str(exc), "input": page.url}]
         quarantine({"url": page.url}, errors, source=page.source, raw_page_id=page.id)
@@ -132,8 +135,4 @@ def load_detail_page(page: RawPage, *, index: bool = True) -> LoadResult:
         outcome, tender_pk = upsert_tender(
             tender, fetched_at=page.fetched_at, raw_page_id=page.id, buyer_entity_id=res.entity_id
         )
-        if index and outcome in ("new", "updated"):
-            from tenders.tasks import index_tender
-
-            transaction.on_commit(lambda: index_tender.delay(tender_pk))
     return LoadResult(outcome, tender_pk, tender.source_tender_id)

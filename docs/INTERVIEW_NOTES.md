@@ -101,22 +101,34 @@ from the listing date. Silent repair hides source problems; quarantine keeps the
   review list.
 * Run `make er-eval` to reproduce it live.
 
-## "Why hybrid search / why these ES settings?"
+## "How does search work without Elasticsearch?"
 
-* `title`: English analyser (stems, so "toilets" finds "toilet").
-* `title.plain`: unstemmed, used for typo matching. Stemming broke fuzziness:
-  "consrvation" stems to "consrvat", which is 3 edits from "conserv", over the 2-edit
-  limit.
-* `title.auto`: edge n-grams, so partial words work ("conserv").
-* **Ranking bug I fixed:** "rod maintenence" first returned a classroom repair, because
-  its *buyer* is an "Estate Maintenance Section" and a rare word in a boosted buyer field
-  beat every title. Now a match on every word in the title ranks first. If nothing matches
-  every word, the API retries with any word and returns `relaxed: true`. The UI then says
-  it is showing partial matches.
-* If Elasticsearch is down, Postgres answers (trigram index); `search_backend` says which.
+v1 ran Elasticsearch next to Postgres; v2 dropped it (one database, no second index to keep
+in sync, ~1 GB less RAM on the VPS). Everything is in `tenders/search.py`:
+
+* `tender.search_vector` is a STORED generated `tsvector` with a GIN index: title at
+  weight A (stemmed *and* as written, so exact words still count), tender ID / reference
+  number A, buyer C, location and organisation chain D. Every write path keeps it current
+  because the database computes it.
+* The query is `websearch_to_tsquery` syntax with every word turned into a prefix
+  (`constr:*` finds "construction"), ranked with `ts_rank_cd`; an exact tender ID or
+  reference number ranks first.
+* Typos: when nothing matches, unknown words are corrected against the data's own
+  vocabulary with `pg_trgm` + Levenshtein ("toliet" -> "toilet"), returned as `corrected`.
+* **Ranking bug I fixed (still covered by a test):** "rod maintenence" first returned a
+  classroom repair, because its *buyer* is an "Estate Maintenance Section" and a rare
+  word in a boosted buyer field beat every title. Title weight A vs buyer C fixes it; if
+  no tender matches every word, the API retries with any word and returns
+  `relaxed: true`, and the UI says it is showing partial matches.
+* Copilot passages use the same idea plus pgvector: Postgres full-text top 50 and HNSW
+  cosine top 50, fused with reciprocal rank fusion (k = 60). Global recall@5 on the
+  439-question eval is 92.9% (`manage.py copilot_eval`).
+* Alerts reuse the same search, so an alert keyword matches exactly what the search box
+  would find.
 
 ## "Anything break in deployment?"
 
+(v1, before Caddy replaced nginx in v2; the lessons still apply to any reverse proxy.)
 nginx resolves upstream hostnames once, at startup. After `docker compose up` recreated
 the web container, it had a new IP and nginx kept sending traffic to the old one: 502s.
 Fix: Docker's DNS resolver plus `server web:8000 resolve` in a shared-memory upstream zone
