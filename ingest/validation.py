@@ -66,6 +66,7 @@ class TenderIn(BaseModel):
     published_at: datetime
     closes_at: datetime
     opens_at: datetime | None = None
+    prebid_meeting: datetime | None = None
     location: str = ""
     pincode: str = ""
     state: str = ""
@@ -93,6 +94,10 @@ class TenderIn(BaseModel):
         detection: the portal embeds a visitor counter and session tokens that change
         on every request."""
         data = self.model_dump(mode="json", exclude={"url"})
+        if data.get("prebid_meeting") is None:
+            # Added later: leaving it out when empty keeps the hashes of the tenders loaded
+            # before it existed, so only tenders that have a pre-bid meeting are rewritten.
+            data.pop("prebid_meeting", None)
         blob = json.dumps(data, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(blob.encode()).hexdigest()
 
@@ -111,6 +116,12 @@ def _convert(raw: dict[str, str]) -> tuple[dict, list[dict]]:
     conv("published_at", parse_ist, raw.get("published"))
     conv("closes_at", parse_ist, raw.get("closes"))
     conv("opens_at", parse_ist, raw.get("opens"))
+    # Optional and free text on some portals ("As per NIT"): unreadable means unknown, it
+    # is no reason to quarantine the tender.
+    try:
+        out["prebid_meeting"] = parse_ist(raw.get("prebid"))
+    except ValueError:
+        out["prebid_meeting"] = None
     conv("value_inr", parse_inr, raw.get("value"))
     conv("emd_inr", parse_inr, raw.get("emd"))
     conv("fee_inr", parse_inr, raw.get("fee"))

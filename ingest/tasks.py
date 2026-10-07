@@ -23,11 +23,12 @@ from ingest.loader import load_detail_page
 from ingest.models import CrawlItem, CrawlRun, DeadLetter, Quarantine, RawPage
 from ingest.parsers.gepnic import StaleSession
 from ingest.ratelimit import RedisRateLimiter
-from ingest.sources import get_source
+from ingest.sources import get_source, resolve_keys
 
 log = logging.getLogger(__name__)
 
 MAX_RETRIES = 5
+STALE_RUN_HOURS = 6  # close_stale_runs' default cutoff
 _fetcher: Fetcher | None = None
 _redis = None
 
@@ -89,9 +90,25 @@ class DeadLetterTask(Task):
 
 @shared_task
 def start_crawl(mode: str = "incremental", sources: list[str] | None = None) -> list[int]:
+    """Queue one run per source (default CRAWLER_SOURCES; "all" = every enabled source).
+
+    A source whose previous run is still going is skipped: a second run on the same host
+    would only share its 1 req/s budget and both would finish later. Runs older than
+    close_stale_runs' cutoff do not count, so a lost run never blocks a source for good.
+    """
+    keys = resolve_keys(sources or settings.CRAWLER["SOURCES"])  # fails fast on typos
+    busy = set(
+        CrawlRun.objects.filter(
+            status=CrawlRun.Status.RUNNING,
+            source__in=keys,
+            started__gte=timezone.now() - timedelta(hours=STALE_RUN_HOURS),
+        ).values_list("source", flat=True)
+    )
     run_ids = []
-    for key in sources or settings.CRAWLER["SOURCES"]:
-        get_source(key)  # fail fast on typos
+    for key in keys:
+        if key in busy:
+            log.info("source %s: previous run still in progress, not starting another", key)
+            continue
         run = CrawlRun.objects.create(source=key, mode=mode)
         crawl_listing.delay(run.pk)
         run_ids.append(run.pk)
@@ -112,8 +129,10 @@ def crawl_listing(self, run_id: int, max_orgs: int | None = None) -> int:
     source = get_source(run.source)
     fetcher = worker_fetcher()
     fetcher.reset_session()
+    if not pipeline.robots_gate(run, source, fetcher):
+        return 0
     try:
-        disc = pipeline.Crawler(source, fetcher, run).discover(mode=run.mode, max_orgs=max_orgs)
+        disc = pipeline.crawler_for(source, fetcher, run).discover(mode=run.mode, max_orgs=max_orgs)
     except Exception as exc:
         if self.request.retries >= self.max_retries:
             CrawlRun.objects.filter(pk=run_id).update(
@@ -151,7 +170,7 @@ def fetch_detail(self, run_id: int, tender_id: str, url: str) -> int:
     run = CrawlRun.objects.get(pk=run_id)
     source = get_source(run.source)
     fetcher = worker_fetcher()
-    crawler = pipeline.Crawler(source, fetcher, run)
+    crawler = pipeline.crawler_for(source, fetcher, run)
     if not load_session(run_id, fetcher, source.origin.split("://", 1)[1]):
         crawler.ensure_session()
     before = fetcher.export_cookies()
@@ -173,7 +192,7 @@ def parse_and_load(self, raw_page_id: int, run_id: int, tender_id: str) -> str:
 
 
 @shared_task
-def close_stale_runs(max_age_hours: int = 6) -> list[int]:
+def close_stale_runs(max_age_hours: int = STALE_RUN_HOURS) -> list[int]:
     cutoff = timezone.now() - timedelta(hours=max_age_hours)
     closed = []
     for run in CrawlRun.objects.filter(status=CrawlRun.Status.RUNNING, started__lt=cutoff):

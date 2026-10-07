@@ -30,9 +30,9 @@ def test_backfill_reparses_stored_pages_and_is_rerunnable(make_page):
     for p in sorted(CENTRAL.glob("detail_*.html")):
         make_page(p.read_text(encoding="utf-8"), fetched_at=day)
     d = timezone.localtime(day).date().isoformat()
-    first = run("backfill", d, d, "--no-index")
+    first = run("backfill", d, d)
     assert "new=18" in first
-    second = run("backfill", d, d, "--no-index")
+    second = run("backfill", d, d)
     assert "unchanged=18" in second
     assert Tender.objects.count() == 18
 
@@ -47,10 +47,10 @@ def test_backfill_after_parser_fix_updates_rows(make_page, monkeypatch):
     monkeypatch.setattr(
         "ingest.loader.gepnic.parse_detail", lambda h: {**real(h), "product_category": "BUG"}
     )
-    run("backfill", "2000-01-01", "2100-01-01", "--no-index")
+    run("backfill", "2000-01-01", "2100-01-01")
     assert Tender.objects.get().product_category == "BUG"
     monkeypatch.setattr("ingest.loader.gepnic.parse_detail", real)  # the "fix"
-    out = run("backfill", "2000-01-01", "2100-01-01", "--no-index")
+    out = run("backfill", "2000-01-01", "2100-01-01")
     assert "updated=1" in out
     assert Tender.objects.get().product_category == "Electrical Works"
 
@@ -68,7 +68,7 @@ def test_resolve_buyers_rebuild_is_deterministic(make_page):
 
         load_detail_page(make_page(p.read_text(encoding="utf-8")))
     before = sorted(BuyerEntity.objects.values_list("canonical_name", flat=True))
-    out = run("resolve_buyers", "--rebuild", "--no-index")
+    out = run("resolve_buyers", "--rebuild")
     after = sorted(BuyerEntity.objects.values_list("canonical_name", flat=True))
     assert before == after
     assert "entities=" in out
@@ -110,3 +110,15 @@ def test_er_pairs_and_eval(tmp_path, make_page):
     assert "synthetic positive pairs" in run("er_pairs", str(synthetic), "--synthetic", "10")
     rows = list(csv.DictReader(synthetic.open()))
     assert rows and all(r["same_entity"] == "1" and r["name_a"] != r["name_b"] for r in rows)
+
+
+def test_crawl_sync_max_details_caps_detail_fetches(portal):
+    """A bounded live check (`--max-details`) fetches only N detail pages and is not flagged
+    as an index mismatch, since a partial crawl cannot match the index count."""
+    from ingest.models import CrawlRun, RawPage
+
+    out = run("crawl", "--sync", "--mode", "full", "--max-details", "3")
+    assert "succeeded" in out and "new=3" in out
+    run_ = CrawlRun.objects.latest("pk")
+    assert run_.expected is None and run_.reconciliation["problems"] == []
+    assert RawPage.objects.filter(crawl_run=run_, kind=RawPage.Kind.DETAIL).count() == 3

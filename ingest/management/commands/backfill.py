@@ -28,9 +28,8 @@ class Command(BaseCommand):
         parser.add_argument("date_from", metavar="FROM")
         parser.add_argument("date_to", metavar="TO")
         parser.add_argument("--source")
-        parser.add_argument("--no-index", action="store_true", help="skip Elasticsearch re-index")
 
-    def handle(self, *args, date_from, date_to, source, no_index, **opts):
+    def handle(self, *args, date_from, date_to, source, **opts):
         start, end = _day(date_from, False), _day(date_to, True)
         if start > end:
             raise CommandError("FROM is after TO")
@@ -41,7 +40,7 @@ class Command(BaseCommand):
             pages = pages.filter(source=source)
         counts: dict[str, int] = {}
         for page in pages.iterator(chunk_size=200):
-            outcome = load_detail_page(page, index=not no_index).outcome
+            outcome = load_detail_page(page).outcome
             counts[outcome] = counts.get(outcome, 0) + 1
         summary = " ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "no pages"
         self.stdout.write(f"backfill {date_from}..{date_to}: {summary}")

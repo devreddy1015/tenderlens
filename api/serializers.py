@@ -41,6 +41,7 @@ class TenderDetailSerializer(TenderSerializer):
             "tender_type",
             "fee_inr",
             "opens_at",
+            "prebid_meeting",
             "pincode",
             "url",
             "first_seen",
@@ -89,9 +90,13 @@ class TenderPageSerializer(serializers.Serializer):
     count = serializers.IntegerField()
     next = serializers.CharField(allow_null=True)
     previous = serializers.CharField(allow_null=True)
-    search_backend = serializers.ChoiceField(choices=["elasticsearch", "postgres"])
+    search_backend = serializers.ChoiceField(choices=["postgres"])
     relaxed = serializers.BooleanField(
         help_text="true when nothing matched every word and results match some words"
+    )
+    corrected = serializers.CharField(
+        allow_null=True,
+        help_text="the query after typo correction, when the words as typed matched nothing",
     )
     facets = FacetsSerializer()
     results = TenderSerializer(many=True)

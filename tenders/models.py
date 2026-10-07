@@ -75,6 +75,9 @@ class Tender(models.Model):
     published_at = models.DateTimeField()
     closes_at = models.DateTimeField()
     opens_at = models.DateTimeField(null=True, blank=True)
+    # "Pre Bid Meeting Date" of the portal's critical dates, or, when the portal has none,
+    # the date a Copilot Bid Brief read from the tender's documents (copilot.ingest).
+    prebid_meeting = models.DateTimeField(null=True, blank=True)
     location = models.TextField(blank=True, default="")
     pincode = models.CharField(max_length=6, blank=True, default="")
     state = models.CharField(max_length=64, blank=True, default="")
